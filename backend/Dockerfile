@@ -26,6 +26,9 @@ RUN npx prisma generate
 # Build TypeScript
 RUN ./node_modules/.bin/tsc
 
+# Build seed for production
+RUN ./node_modules/.bin/tsc --project tsconfig.seed.json
+
 # Stage 2: Production
 FROM node:20-alpine
 
@@ -45,6 +48,7 @@ RUN npx prisma generate
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/dist-seed ./dist-seed
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
 # Create logs directory
