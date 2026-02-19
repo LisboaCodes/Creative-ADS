@@ -1,0 +1,267 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "windows", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  ANALYST
+  CLIENT
+}
+
+enum PlatformType {
+  FACEBOOK
+  INSTAGRAM
+  GOOGLE_ADS
+  TIKTOK
+  LINKEDIN
+  TWITTER
+  PINTEREST
+  SNAPCHAT
+}
+
+enum CampaignStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+  DELETED
+}
+
+enum AlertType {
+  PERFORMANCE
+  STATUS
+  OPPORTUNITY
+}
+
+enum AlertAction {
+  EMAIL
+  IN_APP
+  PAUSE_CAMPAIGN
+  WEBHOOK
+}
+
+enum ReportStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  password      String
+  name          String
+  role          UserRole @default(ANALYST)
+  isActive      Boolean  @default(true)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  platforms     Platform[]
+  alerts        Alert[]
+  reports       Report[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Platform {
+  id              String       @id @default(cuid())
+  type            PlatformType
+  name            String       // e.g., "My Facebook Ads Account"
+
+  // OAuth tokens (encrypted)
+  accessToken     String
+  refreshToken    String?
+  tokenExpiresAt  DateTime?
+
+  // Platform-specific IDs
+  externalId      String       // e.g., Facebook Ad Account ID
+
+  isConnected     Boolean      @default(true)
+  lastSyncAt      DateTime?
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  // Relations
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaigns       Campaign[]
+
+  @@unique([userId, type, externalId])
+  @@index([userId])
+  @@index([type])
+  @@map("platforms")
+}
+
+model Campaign {
+  id              String         @id @default(cuid())
+
+  // Campaign Info
+  externalId      String         // Platform's campaign ID
+  name            String
+  status          CampaignStatus
+
+  // Budget
+  dailyBudget     Float?
+  lifetimeBudget  Float?
+  currency        String         @default("USD")
+
+  // Dates
+  startDate       DateTime?
+  endDate         DateTime?
+
+  // Platform info
+  platformType    PlatformType
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Relations
+  platformId      String
+  platform        Platform       @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  metrics         Metric[]
+
+  @@unique([platformId, externalId])
+  @@index([platformId])
+  @@index([platformType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("campaigns")
+}
+
+model Metric {
+  id              String   @id @default(cuid())
+
+  // Date range
+  date            DateTime
+
+  // Core metrics
+  impressions     BigInt   @default(0)
+  reach           BigInt   @default(0)
+  clicks          BigInt   @default(0)
+  spend           Float    @default(0)
+  conversions     Int      @default(0)
+
+  // Calculated metrics (stored for performance)
+  ctr             Float    @default(0) // Click-through rate
+  cpc             Float    @default(0) // Cost per click
+  cpm             Float    @default(0) // Cost per mille (1000 impressions)
+  conversionRate  Float    @default(0)
+  roas            Float    @default(0) // Return on ad spend
+  revenue         Float    @default(0)
+
+  // Additional metrics (platform-specific)
+  metadata        Json?    // For storing platform-specific metrics
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  campaignId      String
+  campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, date])
+  @@index([campaignId])
+  @@index([date])
+  @@map("metrics")
+}
+
+model Alert {
+  id              String        @id @default(cuid())
+
+  name            String
+  description     String?
+  type            AlertType
+  isActive        Boolean       @default(true)
+
+  // Conditions (stored as JSON)
+  conditions      Json          // { metric: 'roas', operator: '<', value: 2 }
+
+  // Actions
+  actions         AlertAction[]
+
+  // Target
+  targetPlatforms PlatformType[]
+
+  // Notification settings
+  emailTo         String[]
+  webhookUrl      String?
+
+  // Tracking
+  lastTriggeredAt DateTime?
+  triggerCount    Int           @default(0)
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isActive])
+  @@map("alerts")
+}
+
+model Report {
+  id              String       @id @default(cuid())
+
+  title           String
+  template        String       // 'executive', 'detailed', 'platform', etc.
+
+  // Configuration
+  config          Json         // Date range, filters, selected metrics, etc.
+
+  status          ReportStatus @default(PENDING)
+
+  // File info
+  fileUrl         String?
+  fileFormat      String?      // 'pdf' or 'xlsx'
+
+  // Scheduling
+  isScheduled     Boolean      @default(false)
+  scheduleConfig  Json?        // cron expression, recipients, etc.
+  nextRunAt       DateTime?
+
+  // Tracking
+  generatedAt     DateTime?
+  error           String?
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  // Relations
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([nextRunAt])
+  @@map("reports")
+}
+
+model RefreshToken {
+  id          String   @id @default(cuid())
+  token       String   @unique
+  userId      String
+  expiresAt   DateTime
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
