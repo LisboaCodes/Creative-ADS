@@ -8,7 +8,7 @@ import type { BasePlatformService } from './integrations/base.service';
 export class PlatformsService {
   private platformServices: Map<PlatformType, BasePlatformService> = new Map([
     [PlatformType.FACEBOOK, facebookService],
-    // Add other platforms here as they're implemented
+    [PlatformType.INSTAGRAM, facebookService], // Instagram Ads uses Facebook's API
     // [PlatformType.GOOGLE_ADS, googleService],
     // [PlatformType.TIKTOK, tiktokService],
   ]);
@@ -189,7 +189,15 @@ export class PlatformsService {
     }
 
     const service = this.getPlatformService(platform.type);
-    const accessToken = decrypt(platform.accessToken);
+
+    // Try to decrypt the access token - if it fails, this is a demo/seed account
+    let accessToken: string;
+    try {
+      accessToken = decrypt(platform.accessToken);
+    } catch {
+      logger.info(`Platform ${platformId} has non-encrypted token (demo account), skipping external sync`);
+      return { synced: 0, metricsSynced: 0, demo: true };
+    }
 
     // Get campaigns from platform
     const campaigns = await service.getCampaigns(accessToken, platform.externalId);
