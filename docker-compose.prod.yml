@@ -36,8 +36,6 @@ services:
       dockerfile: Dockerfile
     container_name: creative-ads-frontend
     restart: unless-stopped
-    expose:
-      - "80"
     ports:
       - "3080:80"
     depends_on:
@@ -49,15 +47,6 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.creative-ads.rule=Host(`ads.creativenext.com.br`)"
-      - "traefik.http.routers.creative-ads.entryPoints=http"
-      - "traefik.http.routers.creative-ads-secure.rule=Host(`ads.creativenext.com.br`)"
-      - "traefik.http.routers.creative-ads-secure.entryPoints=https"
-      - "traefik.http.routers.creative-ads-secure.tls=true"
-      - "traefik.http.routers.creative-ads-secure.tls.certresolver=letsencrypt"
-      - "traefik.http.services.creative-ads.loadbalancer.server.port=80"
     networks:
       - coolify
       - default
