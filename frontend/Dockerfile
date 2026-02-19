@@ -9,14 +9,15 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm install
 
 # Copy source code
 COPY . .
 
 # Build app (memory limit for 4GB server)
 ENV NODE_OPTIONS="--max-old-space-size=1536"
-RUN npm run build
+ENV PATH="/app/node_modules/.bin:$PATH"
+RUN npx vite build
 
 # Stage 2: Production
 FROM nginx:alpine
