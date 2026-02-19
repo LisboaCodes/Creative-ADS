@@ -8,6 +8,9 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
+# Force development mode to install devDependencies (vite, typescript, etc.)
+ENV NODE_ENV=development
+
 # Install dependencies
 RUN npm install
 

@@ -11,6 +11,9 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
 
+# Force development mode to install devDependencies (tsc, etc.)
+ENV NODE_ENV=development
+
 # Install dependencies
 RUN npm install
 
