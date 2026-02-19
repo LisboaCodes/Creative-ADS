@@ -15,6 +15,7 @@ services:
       DATABASE_URL: postgresql://creative_ads:creativeads2026Mel@cc008co0wcocgsc4c4kogcsg:5432/creative_ads?schema=public
       REDIS_HOST: coolify-redis
       REDIS_PORT: 6379
+      REDIS_PASSWORD: 7mljN9z919uKEybPK9lCzu6njlFdcIkPGtvLALwnc5Y=
       JWT_SECRET: creative-ads-jwt-secret-2026-production-key
       JWT_REFRESH_SECRET: creative-ads-refresh-secret-2026-production-key
       ENCRYPTION_KEY: creativeads2026encryptionkey32cx
