@@ -7,7 +7,7 @@ import { z } from 'zod';
 const metricsFiltersSchema = z.object({
   startDate: z.string().transform((str) => new Date(str)),
   endDate: z.string().transform((str) => new Date(str)),
-  platformTypes: z.string().optional().transform((str) => str?.split(',')),
+  platformTypes: z.string().optional().transform((str) => str?.split(',') as any),
 });
 
 export class MetricsController {
