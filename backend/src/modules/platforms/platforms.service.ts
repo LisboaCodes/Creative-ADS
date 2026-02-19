@@ -226,15 +226,77 @@ export class PlatformsService {
       });
     }
 
+    // Sync metrics for each campaign (last 30 days)
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+
+    let metricsSynced = 0;
+
+    // Get all campaigns for this platform to sync metrics
+    const dbCampaigns = await prisma.campaign.findMany({
+      where: { platformId: platform.id },
+    });
+
+    for (const campaign of dbCampaigns) {
+      try {
+        const metricsData = await service.getMetrics(accessToken, campaign.externalId, startDate, endDate);
+
+        for (const metric of metricsData) {
+          await prisma.metric.upsert({
+            where: {
+              campaignId_date: {
+                campaignId: campaign.id,
+                date: metric.date,
+              },
+            },
+            create: {
+              campaignId: campaign.id,
+              date: metric.date,
+              impressions: metric.impressions,
+              reach: metric.reach,
+              clicks: metric.clicks,
+              spend: metric.spend,
+              conversions: metric.conversions,
+              revenue: metric.revenue || 0,
+              ctr: (metric as any).ctr || 0,
+              cpc: (metric as any).cpc || 0,
+              cpm: (metric as any).cpm || 0,
+              conversionRate: (metric as any).conversionRate || 0,
+              roas: (metric as any).roas || 0,
+              metadata: metric.metadata || undefined,
+            },
+            update: {
+              impressions: metric.impressions,
+              reach: metric.reach,
+              clicks: metric.clicks,
+              spend: metric.spend,
+              conversions: metric.conversions,
+              revenue: metric.revenue || 0,
+              ctr: (metric as any).ctr || 0,
+              cpc: (metric as any).cpc || 0,
+              cpm: (metric as any).cpm || 0,
+              conversionRate: (metric as any).conversionRate || 0,
+              roas: (metric as any).roas || 0,
+              metadata: metric.metadata || undefined,
+            },
+          });
+          metricsSynced++;
+        }
+      } catch (error: any) {
+        logger.warn(`Failed to sync metrics for campaign ${campaign.externalId}: ${error.message}`);
+      }
+    }
+
     // Update last sync time
     await prisma.platform.update({
       where: { id: platformId },
       data: { lastSyncAt: new Date() },
     });
 
-    logger.info(`Synced ${campaigns.length} campaigns for platform ${platformId}`);
+    logger.info(`Synced ${campaigns.length} campaigns and ${metricsSynced} metrics for platform ${platformId}`);
 
-    return { synced: campaigns.length };
+    return { synced: campaigns.length, metricsSynced };
   }
 }
 

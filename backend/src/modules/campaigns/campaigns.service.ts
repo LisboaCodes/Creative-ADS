@@ -67,8 +67,19 @@ export class CampaignsService {
       prisma.campaign.count({ where }),
     ]);
 
+    // Convert BigInt fields to Number for JSON serialization
+    const serializedCampaigns = campaigns.map((campaign) => ({
+      ...campaign,
+      metrics: campaign.metrics.map((m) => ({
+        ...m,
+        impressions: Number(m.impressions),
+        reach: Number(m.reach),
+        clicks: Number(m.clicks),
+      })),
+    }));
+
     return {
-      campaigns,
+      campaigns: serializedCampaigns,
       pagination: {
         page,
         limit,
@@ -102,7 +113,16 @@ export class CampaignsService {
       throw new Error('Campaign not found');
     }
 
-    return campaign;
+    // Convert BigInt fields to Number for JSON serialization
+    return {
+      ...campaign,
+      metrics: campaign.metrics.map((m) => ({
+        ...m,
+        impressions: Number(m.impressions),
+        reach: Number(m.reach),
+        clicks: Number(m.clicks),
+      })),
+    };
   }
 
   /**
@@ -142,7 +162,7 @@ export class CampaignsService {
           throw new Error('Platform not supported');
       }
 
-      await service.updateCampaignStatus(campaign.externalId, accessToken, data.status);
+      await service.updateCampaignStatus(accessToken, campaign.externalId, data.status);
     }
 
     // Update in database
@@ -192,7 +212,7 @@ export class CampaignsService {
         throw new Error('Platform not supported');
     }
 
-    await service.updateCampaignBudget(campaign.externalId, accessToken, {
+    await service.updateCampaignBudget(accessToken, campaign.externalId, {
       daily: data.dailyBudget,
       lifetime: data.lifetimeBudget,
     });

@@ -11,7 +11,7 @@ import {
   Eye,
   Target
 } from 'lucide-react';
-import { subDays } from 'date-fns';
+import { subDays, format } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
 import { Badge } from '../components/ui/badge';
@@ -31,6 +31,46 @@ export default function Dashboard() {
       return response.data.data;
     },
   });
+
+  // Fetch time-series data for the spending chart
+  const { data: timeSeries } = useQuery({
+    queryKey: ['time-series-metrics', startDate, endDate],
+    queryFn: async () => {
+      const response = await api.get('/api/metrics/time-series', {
+        params: { startDate, endDate, groupBy: 'day' },
+      });
+      return response.data.data;
+    },
+  });
+
+  // Fetch by-platform data for the distribution chart
+  const { data: platformData } = useQuery({
+    queryKey: ['platform-metrics', startDate, endDate],
+    queryFn: async () => {
+      const response = await api.get('/api/metrics/by-platform', {
+        params: { startDate, endDate },
+      });
+      return response.data.data;
+    },
+  });
+
+  // Fetch campaigns for Quick Stats
+  const { data: campaignsData } = useQuery({
+    queryKey: ['campaigns-stats'],
+    queryFn: async () => {
+      const response = await api.get('/api/campaigns', {
+        params: { limit: 100 },
+      });
+      return response.data.data;
+    },
+  });
+
+  // Calculate quick stats from real data
+  const activeCampaigns = campaignsData?.campaigns?.filter((c: any) => c.status === 'ACTIVE').length || 0;
+  const pausedCampaigns = campaignsData?.campaigns?.filter((c: any) => c.status === 'PAUSED').length || 0;
+  const connectedPlatforms = campaignsData?.campaigns
+    ? new Set(campaignsData.campaigns.map((c: any) => c.platformType)).size
+    : 0;
 
   // Stat Cards Configuration
   const stats = [
@@ -72,7 +112,10 @@ export default function Dashboard() {
     },
   ];
 
-  // Spending Over Time Chart (Last 30 days)
+  // Build Spending Over Time chart from real time-series data
+  const spendChartCategories = timeSeries?.map((item: any) => format(new Date(item.date), 'MMM dd')) || [];
+  const spendChartData = timeSeries?.map((item: any) => item.spend) || [];
+
   const spendChartOptions: ApexOptions = {
     chart: {
       type: 'area',
@@ -90,7 +133,12 @@ export default function Dashboard() {
       },
     },
     xaxis: {
-      categories: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
+      categories: spendChartCategories,
+      labels: {
+        rotate: -45,
+        rotateAlways: spendChartCategories.length > 10,
+        style: { fontSize: '10px' },
+      },
     },
     colors: ['#3B82F6'],
     tooltip: {
@@ -103,20 +151,51 @@ export default function Dashboard() {
   const spendChartSeries = [
     {
       name: 'Spend',
-      data: [1200, 1800, 1500, 2200],
+      data: spendChartData,
     },
   ];
 
-  // Platform Distribution Chart
+  // Build Platform Distribution chart from real data
+  const platformLabels = platformData?.map((p: any) => {
+    const nameMap: Record<string, string> = {
+      FACEBOOK: 'Facebook',
+      INSTAGRAM: 'Instagram',
+      GOOGLE_ADS: 'Google Ads',
+      TIKTOK: 'TikTok',
+      LINKEDIN: 'LinkedIn',
+      TWITTER: 'Twitter',
+      PINTEREST: 'Pinterest',
+      SNAPCHAT: 'Snapchat',
+    };
+    return nameMap[p.platformType] || p.platformType;
+  }) || [];
+  const platformSpendData = platformData?.map((p: any) => Number(p.spend.toFixed(2))) || [];
+  const platformColors: Record<string, string> = {
+    FACEBOOK: '#1877F2',
+    INSTAGRAM: '#E4405F',
+    GOOGLE_ADS: '#4285F4',
+    TIKTOK: '#000000',
+    LINKEDIN: '#0A66C2',
+    TWITTER: '#1DA1F2',
+    PINTEREST: '#E60023',
+    SNAPCHAT: '#FFFC00',
+  };
+  const platformColorArray = platformData?.map((p: any) => platformColors[p.platformType] || '#888888') || [];
+
   const platformChartOptions: ApexOptions = {
     chart: { type: 'donut' },
-    labels: ['Facebook', 'Instagram', 'Google Ads', 'TikTok'],
-    colors: ['#1877F2', '#E4405F', '#4285F4', '#000000'],
+    labels: platformLabels,
+    colors: platformColorArray.length > 0 ? platformColorArray : ['#888888'],
     legend: { position: 'bottom' },
     dataLabels: { enabled: true },
+    tooltip: {
+      y: {
+        formatter: (value) => formatCurrency(value),
+      },
+    },
   };
 
-  const platformChartSeries = [45, 30, 20, 5];
+  const platformChartSeries = platformSpendData;
 
   // Loading State
   if (isLoading) {
@@ -211,12 +290,18 @@ export default function Dashboard() {
                 <CardDescription>Last 30 days spending trend</CardDescription>
               </CardHeader>
               <CardContent>
-                <ReactApexChart
-                  options={spendChartOptions}
-                  series={spendChartSeries}
-                  type="area"
-                  height={300}
-                />
+                {spendChartData.length > 0 ? (
+                  <ReactApexChart
+                    options={spendChartOptions}
+                    series={spendChartSeries}
+                    type="area"
+                    height={300}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                    No spending data for this period
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -227,12 +312,18 @@ export default function Dashboard() {
                 <CardDescription>Spend distribution by platform</CardDescription>
               </CardHeader>
               <CardContent>
-                <ReactApexChart
-                  options={platformChartOptions}
-                  series={platformChartSeries}
-                  type="donut"
-                  height={300}
-                />
+                {platformChartSeries.length > 0 ? (
+                  <ReactApexChart
+                    options={platformChartOptions}
+                    series={platformChartSeries}
+                    type="donut"
+                    height={300}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                    No platform data available
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -308,19 +399,19 @@ export default function Dashboard() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Active Campaigns</span>
-                  <Badge>12</Badge>
+                  <Badge>{activeCampaigns}</Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Paused Campaigns</span>
-                  <Badge variant="secondary">3</Badge>
+                  <Badge variant="secondary">{pausedCampaigns}</Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Connected Platforms</span>
-                  <Badge variant="outline">2</Badge>
+                  <Badge variant="outline">{connectedPlatforms}</Badge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Last Sync</span>
-                  <span className="text-xs text-muted-foreground">5 min ago</span>
+                  <span className="text-sm text-muted-foreground">Total Campaigns</span>
+                  <Badge variant="outline">{campaignsData?.pagination?.total || 0}</Badge>
                 </div>
               </CardContent>
             </Card>

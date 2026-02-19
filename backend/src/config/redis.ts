@@ -27,15 +27,27 @@ redis.on('close', () => {
   logger.warn('⚠️ Redis connection closed');
 });
 
+// BigInt-safe JSON serialization
+function jsonReplacer(_key: string, value: any): any {
+  return typeof value === 'bigint' ? `__bigint__${value.toString()}` : value;
+}
+
+function jsonReviver(_key: string, value: any): any {
+  if (typeof value === 'string' && value.startsWith('__bigint__')) {
+    return BigInt(value.slice(10));
+  }
+  return value;
+}
+
 // Cache helper functions
 export const cache = {
   async get<T>(key: string): Promise<T | null> {
     const data = await redis.get(key);
-    return data ? JSON.parse(data) : null;
+    return data ? JSON.parse(data, jsonReviver) : null;
   },
 
   async set(key: string, value: any, ttl?: number): Promise<void> {
-    const serialized = JSON.stringify(value);
+    const serialized = JSON.stringify(value, jsonReplacer);
     if (ttl) {
       await redis.setex(key, ttl, serialized);
     } else {
