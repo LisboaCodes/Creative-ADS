@@ -3,6 +3,8 @@
 # Stage 1: Build
 FROM node:20-alpine AS builder
 
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
 # Copy package files
@@ -19,11 +21,12 @@ COPY . .
 RUN npx prisma generate
 
 # Build TypeScript
-ENV PATH="/app/node_modules/.bin:$PATH"
-RUN tsc
+RUN ./node_modules/.bin/tsc
 
 # Stage 2: Production
 FROM node:20-alpine
+
+RUN apk add --no-cache openssl
 
 WORKDIR /app
 
