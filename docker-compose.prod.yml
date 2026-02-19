@@ -10,14 +10,14 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      APP_URL: ${APP_URL:-http://localhost:3000}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      APP_URL: http://206.189.223.242:3080
+      FRONTEND_URL: http://206.189.223.242:3080
       DATABASE_URL: postgresql://creative_ads:creativeads2026Mel!@cc008co0wcocgsc4c4kogcsg:5432/creative_ads?schema=public
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      JWT_SECRET: ${JWT_SECRET:-creative-ads-jwt-secret-2026-production-key}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-creative-ads-refresh-secret-2026-production-key}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-creativeads2026encryptionkey32c}
+      REDIS_HOST: coolify-redis
+      REDIS_PORT: 6379
+      JWT_SECRET: creative-ads-jwt-secret-2026-production-key
+      JWT_REFRESH_SECRET: creative-ads-refresh-secret-2026-production-key
+      ENCRYPTION_KEY: creativeads2026encryptionkey32c
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
       interval: 30s
