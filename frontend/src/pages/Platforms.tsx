@@ -32,6 +32,7 @@ const platformIcons: Record<string, any> = {
   FACEBOOK: Facebook,
   INSTAGRAM: Instagram,
   GOOGLE_ADS: Chrome,
+  TIKTOK: Sparkles,
   LINKEDIN: Linkedin,
   TWITTER: Twitter,
 };
@@ -40,7 +41,7 @@ const platformColors: Record<string, { bg: string; text: string; icon: string }>
   FACEBOOK: { bg: 'bg-blue-100', text: 'text-blue-600', icon: 'text-blue-600' },
   INSTAGRAM: { bg: 'bg-pink-100', text: 'text-pink-600', icon: 'text-pink-600' },
   GOOGLE_ADS: { bg: 'bg-green-100', text: 'text-green-600', icon: 'text-green-600' },
-  TIKTOK: { bg: 'bg-gray-100', text: 'text-gray-600', icon: 'text-gray-600' },
+  TIKTOK: { bg: 'bg-slate-100', text: 'text-slate-900', icon: 'text-slate-900' },
   LINKEDIN: { bg: 'bg-blue-100', text: 'text-blue-700', icon: 'text-blue-700' },
   TWITTER: { bg: 'bg-sky-100', text: 'text-sky-600', icon: 'text-sky-600' },
 };
@@ -62,39 +63,48 @@ export default function Platforms() {
       const { authUrl } = response.data.data;
       window.location.href = authUrl;
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to initiate OAuth');
+      toast.error(error.response?.data?.error || 'Falha ao iniciar autenticação');
     }
   };
 
   const handleDisconnect = async (platformId: string) => {
     try {
       await api.delete(`/api/platforms/${platformId}`);
-      toast.success('Platform disconnected successfully');
+      toast.success('Plataforma desconectada com sucesso');
       refetch();
       setDisconnectDialog(null);
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to disconnect platform');
+      toast.error(error.response?.data?.error || 'Falha ao desconectar plataforma');
     }
   };
 
   const handleSync = async (platformId: string) => {
     try {
       await api.post(`/api/platforms/${platformId}/sync`);
-      toast.success('Sync started successfully');
+      toast.success('Sincronização iniciada com sucesso');
       refetch();
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to sync platform');
+      toast.error(error.response?.data?.error || 'Falha ao sincronizar plataforma');
     }
   };
 
   const availablePlatforms = [
-    { type: 'FACEBOOK', name: 'Facebook Ads', description: 'Connect Facebook Ads Manager to sync campaigns' },
-    { type: 'INSTAGRAM', name: 'Instagram Ads', description: 'Manage Instagram advertising campaigns' },
-    { type: 'GOOGLE_ADS', name: 'Google Ads', description: 'Search, Display, and Video campaigns' },
-    { type: 'TIKTOK', name: 'TikTok Ads', description: 'Connect TikTok Ads Manager' },
-    { type: 'LINKEDIN', name: 'LinkedIn Ads', description: 'B2B advertising platform' },
-    { type: 'TWITTER', name: 'Twitter/X Ads', description: 'Promoted tweets and campaigns' },
+    { type: 'FACEBOOK', name: 'Facebook Ads', description: 'Conecte o Facebook Ads Manager para sincronizar campanhas' },
+    { type: 'INSTAGRAM', name: 'Instagram Ads', description: 'Gerencie campanhas de publicidade no Instagram' },
+    { type: 'GOOGLE_ADS', name: 'Google Ads', description: 'Campanhas de Search, Display e Vídeo' },
+    { type: 'TIKTOK', name: 'TikTok Ads', description: 'Conecte o TikTok Ads Manager' },
+    { type: 'LINKEDIN', name: 'LinkedIn Ads', description: 'Plataforma de publicidade B2B' },
+    { type: 'TWITTER', name: 'Twitter/X Ads', description: 'Tweets promovidos e campanhas' },
   ];
+
+  const platformNames: Record<string, string> = {
+    FACEBOOK: 'Facebook Ads',
+    INSTAGRAM: 'Instagram Ads',
+    GOOGLE_ADS: 'Google Ads',
+    TIKTOK: 'TikTok Ads',
+    LINKEDIN: 'LinkedIn Ads',
+    TWITTER: 'Twitter/X Ads',
+  };
 
   if (isLoading) {
     return (
@@ -125,9 +135,9 @@ export default function Platforms() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Platforms</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Plataformas</h1>
         <p className="text-muted-foreground">
-          Connect and manage your advertising platforms
+          Conecte e gerencie suas plataformas de publicidade
         </p>
       </div>
 
@@ -135,8 +145,8 @@ export default function Platforms() {
       {platforms && platforms.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Connected Platforms</h2>
-            <Badge variant="outline">{platforms.length} connected</Badge>
+            <h2 className="text-xl font-semibold">Plataformas Conectadas</h2>
+            <Badge variant="outline">{platforms.length} conectada(s)</Badge>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {platforms.map((platform: any) => {
@@ -152,7 +162,7 @@ export default function Platforms() {
                           <Icon className={`h-6 w-6 ${colors.icon}`} />
                         </div>
                         <div>
-                          <CardTitle className="text-lg">{platform.type}</CardTitle>
+                          <CardTitle className="text-lg">{platformNames[platform.type] || platform.type}</CardTitle>
                           <CardDescription className="text-xs">
                             {platform.name}
                           </CardDescription>
@@ -164,7 +174,7 @@ export default function Platforms() {
                         ) : (
                           <AlertCircle className="h-3 w-3 mr-1" />
                         )}
-                        {platform.isConnected ? 'Active' : 'Inactive'}
+                        {platform.isConnected ? 'Ativo' : 'Inativo'}
                       </Badge>
                     </div>
                   </CardHeader>
@@ -173,10 +183,10 @@ export default function Platforms() {
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Clock className="h-4 w-4" />
                       <span>
-                        Last sync:{' '}
+                        Última sinc:{' '}
                         {platform.lastSyncAt
-                          ? new Date(platform.lastSyncAt).toLocaleDateString()
-                          : 'Never'}
+                          ? new Date(platform.lastSyncAt).toLocaleDateString('pt-BR')
+                          : 'Nunca'}
                       </span>
                     </div>
                   </CardContent>
@@ -188,7 +198,7 @@ export default function Platforms() {
                       onClick={() => handleSync(platform.id)}
                     >
                       <RefreshCw className="h-4 w-4 mr-2" />
-                      Sync
+                      Sincronizar
                     </Button>
                     <Button
                       variant="destructive"
@@ -207,10 +217,10 @@ export default function Platforms() {
       {/* Available Platforms */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Available Platforms</h2>
+          <h2 className="text-xl font-semibold">Plataformas Disponíveis</h2>
           <Badge variant="outline">
             <Sparkles className="h-3 w-3 mr-1" />
-            {availablePlatforms.length} platforms
+            {availablePlatforms.length} plataformas
           </Badge>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -220,7 +230,7 @@ export default function Platforms() {
             const isConnected = platforms?.some(
               (p: any) => p.type === platform.type && p.isConnected
             );
-            const comingSoon = !['FACEBOOK', 'INSTAGRAM'].includes(platform.type);
+            const comingSoon = !['FACEBOOK', 'INSTAGRAM', 'GOOGLE_ADS', 'TIKTOK'].includes(platform.type);
 
             return (
               <Card
@@ -237,7 +247,7 @@ export default function Platforms() {
                         <CardTitle className="text-lg">{platform.name}</CardTitle>
                         {comingSoon && (
                           <Badge variant="secondary" className="text-xs">
-                            Soon
+                            Em breve
                           </Badge>
                         )}
                       </div>
@@ -258,12 +268,12 @@ export default function Platforms() {
                     {isConnected ? (
                       <>
                         <CheckCircle2 className="h-4 w-4 mr-2" />
-                        Connected
+                        Conectado
                       </>
                     ) : comingSoon ? (
-                      'Coming Soon'
+                      'Em Breve'
                     ) : (
-                      'Connect Now'
+                      'Conectar Agora'
                     )}
                   </Button>
                 </CardFooter>
@@ -277,21 +287,21 @@ export default function Platforms() {
       <Dialog open={!!disconnectDialog} onOpenChange={() => setDisconnectDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Disconnect Platform</DialogTitle>
+            <DialogTitle>Desconectar Plataforma</DialogTitle>
             <DialogDescription>
-              Are you sure you want to disconnect this platform? Your campaigns will no longer be
-              synced and you won't be able to manage them from this dashboard.
+              Tem certeza que deseja desconectar esta plataforma? Suas campanhas não serão mais
+              sincronizadas e você não poderá gerenciá-las por este painel.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDisconnectDialog(null)}>
-              Cancel
+              Cancelar
             </Button>
             <Button
               variant="destructive"
               onClick={() => disconnectDialog && handleDisconnect(disconnectDialog)}
             >
-              Disconnect
+              Desconectar
             </Button>
           </DialogFooter>
         </DialogContent>

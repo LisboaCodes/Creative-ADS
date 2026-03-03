@@ -14,6 +14,7 @@ import authRoutes from './modules/auth/auth.routes';
 import platformsRoutes from './modules/platforms/platforms.routes';
 import campaignsRoutes from './modules/campaigns/campaigns.routes';
 import metricsRoutes from './modules/metrics/metrics.routes';
+import aiRoutes from './modules/ai/ai.routes';
 
 // Swagger configuration
 const swaggerOptions = {
@@ -71,6 +72,7 @@ export function createApp(): Application {
   app.use('/api/platforms', platformsRoutes);
   app.use('/api/campaigns', campaignsRoutes);
   app.use('/api/metrics', metricsRoutes);
+  app.use('/api/ai', aiRoutes);
 
   // Swagger documentation
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));

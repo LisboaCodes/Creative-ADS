@@ -8,6 +8,7 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Campaigns from './pages/Campaigns';
 import Platforms from './pages/Platforms';
+import AIAgent from './pages/AIAgent';
 
 // Layout
 import AppLayout from './components/layout/AppLayout';
@@ -32,6 +33,13 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   }
 
   return <>{children}</>;
+}
+
+// Logout route - clears everything and redirects to login
+function LogoutRoute() {
+  const { clearAuth } = useAuthStore();
+  clearAuth();
+  return <Navigate to="/login" replace />;
 }
 
 function App() {
@@ -70,7 +78,11 @@ function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="campaigns" element={<Campaigns />} />
           <Route path="platforms" element={<Platforms />} />
+          <Route path="ai-agent" element={<AIAgent />} />
         </Route>
+
+        {/* Logout */}
+        <Route path="/logout" element={<LogoutRoute />} />
 
         {/* 404 */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

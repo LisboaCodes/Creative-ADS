@@ -57,10 +57,10 @@ export default function Campaigns() {
     try {
       const newStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
       await api.patch(`/api/campaigns/${campaignId}/status`, { status: newStatus });
-      toast.success(`Campaign ${newStatus === 'ACTIVE' ? 'activated' : 'paused'}`);
+      toast.success(`Campanha ${newStatus === 'ACTIVE' ? 'ativada' : 'pausada'}`);
       refetch();
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to update campaign');
+      toast.error(error.response?.data?.error || 'Falha ao atualizar campanha');
     }
   };
 
@@ -105,14 +105,14 @@ export default function Campaigns() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Campaigns</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Campanhas</h1>
           <p className="text-muted-foreground">
-            Manage and monitor all your advertising campaigns
+            Gerencie e monitore todas as suas campanhas de publicidade
           </p>
         </div>
         <Button onClick={() => refetch()} variant="outline" size="default">
           <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
+          Atualizar
         </Button>
       </div>
 
@@ -121,7 +121,7 @@ export default function Campaigns() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search campaigns..."
+            placeholder="Buscar campanhas..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
@@ -131,10 +131,10 @@ export default function Campaigns() {
         <Select value={platformFilter} onValueChange={setPlatformFilter}>
           <SelectTrigger className="w-full sm:w-48">
             <Filter className="h-4 w-4 mr-2" />
-            <SelectValue placeholder="Platform" />
+            <SelectValue placeholder="Plataforma" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Platforms</SelectItem>
+            <SelectItem value="all">Todas as Plataformas</SelectItem>
             <SelectItem value="FACEBOOK">Facebook</SelectItem>
             <SelectItem value="INSTAGRAM">Instagram</SelectItem>
             <SelectItem value="GOOGLE">Google Ads</SelectItem>
@@ -147,9 +147,9 @@ export default function Campaigns() {
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="ACTIVE">Active</SelectItem>
-            <SelectItem value="PAUSED">Paused</SelectItem>
+            <SelectItem value="all">Todos os Status</SelectItem>
+            <SelectItem value="ACTIVE">Ativo</SelectItem>
+            <SelectItem value="PAUSED">Pausado</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -158,9 +158,9 @@ export default function Campaigns() {
       {data?.campaigns && data.campaigns.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Active Campaigns</CardTitle>
+            <CardTitle>Campanhas Ativas</CardTitle>
             <CardDescription>
-              {data.pagination?.total || data.campaigns.length} campaigns found
+              {data.pagination?.total || data.campaigns.length} campanhas encontradas
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -169,22 +169,22 @@ export default function Campaigns() {
                 <thead>
                   <tr className="border-b">
                     <th className="text-left py-3 px-4 font-medium text-sm text-muted-foreground">
-                      Campaign
+                      Campanha
                     </th>
                     <th className="text-left py-3 px-4 font-medium text-sm text-muted-foreground">
-                      Platform
+                      Plataforma
                     </th>
                     <th className="text-left py-3 px-4 font-medium text-sm text-muted-foreground">
                       Status
                     </th>
                     <th className="text-right py-3 px-4 font-medium text-sm text-muted-foreground">
-                      Budget
+                      Orçamento
                     </th>
                     <th className="text-right py-3 px-4 font-medium text-sm text-muted-foreground">
-                      Spend
+                      Gasto
                     </th>
                     <th className="text-right py-3 px-4 font-medium text-sm text-muted-foreground">
-                      Clicks
+                      Cliques
                     </th>
                     <th className="text-right py-3 px-4 font-medium text-sm text-muted-foreground">
                       CTR
@@ -193,7 +193,7 @@ export default function Campaigns() {
                       ROAS
                     </th>
                     <th className="text-center py-3 px-4 font-medium text-sm text-muted-foreground">
-                      Actions
+                      Ações
                     </th>
                   </tr>
                 </thead>
@@ -264,20 +264,20 @@ export default function Campaigns() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuLabel>Ações</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem>
                                   <Edit className="h-4 w-4 mr-2" />
-                                  Edit Budget
+                                  Editar Orçamento
                                 </DropdownMenuItem>
                                 <DropdownMenuItem>
                                   <TrendingUp className="h-4 w-4 mr-2" />
-                                  View Analytics
+                                  Ver Análises
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem className="text-destructive">
                                   <Trash2 className="h-4 w-4 mr-2" />
-                                  Delete
+                                  Excluir
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -294,7 +294,7 @@ export default function Campaigns() {
             {data.pagination && data.pagination.totalPages > 1 && (
               <div className="flex items-center justify-between pt-4 mt-4 border-t">
                 <div className="text-sm text-muted-foreground">
-                  Page {page} of {data.pagination.totalPages}
+                  Página {page} de {data.pagination.totalPages}
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -304,7 +304,7 @@ export default function Campaigns() {
                     disabled={page === 1}
                   >
                     <ChevronLeft className="h-4 w-4 mr-1" />
-                    Previous
+                    Anterior
                   </Button>
                   <Button
                     variant="outline"
@@ -312,7 +312,7 @@ export default function Campaigns() {
                     onClick={() => setPage((p) => Math.min(data.pagination.totalPages, p + 1))}
                     disabled={page === data.pagination.totalPages}
                   >
-                    Next
+                    Próxima
                     <ChevronRight className="h-4 w-4 ml-1" />
                   </Button>
                 </div>
@@ -324,11 +324,11 @@ export default function Campaigns() {
         <Card>
           <CardContent className="py-12 text-center">
             <Filter className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No campaigns found</h3>
+            <h3 className="text-lg font-semibold mb-2">Nenhuma campanha encontrada</h3>
             <p className="text-muted-foreground mb-4">
               {searchTerm || platformFilter !== 'all' || statusFilter !== 'all'
-                ? 'Try adjusting your filters'
-                : 'Connect a platform to see your campaigns'}
+                ? 'Tente ajustar seus filtros'
+                : 'Conecte uma plataforma para ver suas campanhas'}
             </p>
             {searchTerm || platformFilter !== 'all' || statusFilter !== 'all' ? (
               <Button
@@ -339,7 +339,7 @@ export default function Campaigns() {
                   setStatusFilter('all');
                 }}
               >
-                Clear Filters
+                Limpar Filtros
               </Button>
             ) : null}
           </CardContent>

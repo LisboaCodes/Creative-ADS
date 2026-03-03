@@ -26,10 +26,10 @@ export default function Login() {
       const { user, accessToken, refreshToken } = response.data.data;
 
       setAuth(user, accessToken, refreshToken);
-      toast.success('Welcome back!');
+      toast.success('Bem-vindo de volta!');
       navigate('/dashboard');
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Login failed');
+      toast.error(error.response?.data?.error || 'Falha no login');
     } finally {
       setLoading(false);
     }
@@ -52,7 +52,7 @@ export default function Login() {
           </div>
           <h2 className="text-4xl font-bold tracking-tight">Multi Ads Platform</h2>
           <p className="mt-2 text-muted-foreground">
-            Centralized dashboard for managing ads across all platforms
+            Painel centralizado para gerenciar anúncios em todas as plataformas
           </p>
         </div>
 
@@ -61,9 +61,9 @@ export default function Login() {
           <Info className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-800">
             <div className="flex flex-col gap-1">
-              <span className="font-semibold">Demo Account Available</span>
+              <span className="font-semibold">Conta Demo Disponível</span>
               <span className="text-sm">
-                Click the button below to auto-fill credentials and explore the platform!
+                Clique no botão abaixo para preencher as credenciais e explorar a plataforma!
               </span>
             </div>
           </AlertDescription>
@@ -72,17 +72,17 @@ export default function Login() {
         {/* Login Card */}
         <Card className="shadow-xl">
           <CardHeader>
-            <CardTitle>Sign In</CardTitle>
-            <CardDescription>Enter your credentials to access the dashboard</CardDescription>
+            <CardTitle>Entrar</CardTitle>
+            <CardDescription>Digite suas credenciais para acessar o painel</CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">E-mail</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="name@example.com"
+                  placeholder="nome@exemplo.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -90,7 +90,7 @@ export default function Login() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">Senha</Label>
                 <Input
                   id="password"
                   type="password"
@@ -109,7 +109,7 @@ export default function Login() {
                 onClick={fillDemoCredentials}
               >
                 <Info className="h-4 w-4 mr-2" />
-                Use Demo Credentials
+                Usar Credenciais Demo
               </Button>
             </CardContent>
             <CardFooter className="flex flex-col gap-4">
@@ -117,17 +117,17 @@ export default function Login() {
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Signing in...
+                    Entrando...
                   </>
                 ) : (
-                  'Sign In'
+                  'Entrar'
                 )}
               </Button>
 
               <div className="text-center text-sm text-muted-foreground">
-                Don't have an account?{' '}
+                Não tem uma conta?{' '}
                 <Link to="/register" className="font-medium text-primary hover:underline">
-                  Sign up
+                  Cadastre-se
                 </Link>
               </div>
             </CardFooter>
@@ -140,19 +140,19 @@ export default function Login() {
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div className="text-center">
                 <div className="font-semibold text-lg text-primary">8</div>
-                <div className="text-muted-foreground">Campaigns</div>
+                <div className="text-muted-foreground">Campanhas</div>
               </div>
               <div className="text-center">
                 <div className="font-semibold text-lg text-primary">2</div>
-                <div className="text-muted-foreground">Platforms</div>
+                <div className="text-muted-foreground">Plataformas</div>
               </div>
               <div className="text-center">
                 <div className="font-semibold text-lg text-primary">30</div>
-                <div className="text-muted-foreground">Days Data</div>
+                <div className="text-muted-foreground">Dias de Dados</div>
               </div>
               <div className="text-center">
                 <div className="font-semibold text-lg text-primary">240</div>
-                <div className="text-muted-foreground">Metrics</div>
+                <div className="text-muted-foreground">Métricas</div>
               </div>
             </div>
           </CardContent>

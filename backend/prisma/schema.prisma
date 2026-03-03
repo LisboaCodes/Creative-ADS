@@ -68,9 +68,10 @@ model User {
   updatedAt     DateTime @updatedAt
 
   // Relations
-  platforms     Platform[]
-  alerts        Alert[]
-  reports       Report[]
+  platforms         Platform[]
+  alerts            Alert[]
+  reports           Report[]
+  aiConversations   AIConversation[]
 
   @@index([email])
   @@map("users")
@@ -264,4 +265,83 @@ model RefreshToken {
   @@index([userId])
   @@index([token])
   @@map("refresh_tokens")
+}
+
+// AI Agent Models
+
+enum AIProvider {
+  CLAUDE
+  OPENAI
+}
+
+enum AIActionType {
+  PAUSE_CAMPAIGN
+  ACTIVATE_CAMPAIGN
+  UPDATE_BUDGET
+}
+
+enum AIActionStatus {
+  PENDING
+  APPROVED
+  EXECUTED
+  REJECTED
+  FAILED
+}
+
+model AIConversation {
+  id          String     @id @default(cuid())
+  title       String?
+  provider    AIProvider @default(CLAUDE)
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    AIMessage[]
+  actions     AIAction[]
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("ai_conversations")
+}
+
+model AIMessage {
+  id              String   @id @default(cuid())
+  role            String   // 'user' | 'assistant'
+  content         String
+  structuredData  Json?    // Parsed actions, metrics context, etc.
+
+  createdAt       DateTime @default(now())
+
+  // Relations
+  conversationId  String
+  conversation    AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@map("ai_messages")
+}
+
+model AIAction {
+  id              String         @id @default(cuid())
+  type            AIActionType
+  status          AIActionStatus @default(PENDING)
+  campaignId      String?
+  parameters      Json?          // { dailyBudget: 50, etc. }
+  reason          String?        // Why the AI suggested this
+
+  executedAt      DateTime?
+  error           String?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Relations
+  conversationId  String
+  conversation    AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([status])
+  @@map("ai_actions")
 }

@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  Bot,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -40,9 +41,10 @@ export default function AppLayout() {
   };
 
   const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: BarChart3 },
-    { name: 'Campaigns', href: '/campaigns', icon: Megaphone },
-    { name: 'Platforms', href: '/platforms', icon: Plug },
+    { name: 'Painel', href: '/dashboard', icon: BarChart3 },
+    { name: 'Campanhas', href: '/campaigns', icon: Megaphone },
+    { name: 'Plataformas', href: '/platforms', icon: Plug },
+    { name: 'Agente IA', href: '/ai-agent', icon: Bot },
   ];
 
   const isActive = (path: string) => location.pathname === path;
@@ -246,7 +248,12 @@ export default function AppLayout() {
           {/* Breadcrumb / Title */}
           <div className="flex-1">
             <h2 className="text-lg font-semibold capitalize">
-              {location.pathname.replace('/', '') || 'Dashboard'}
+              {({
+                '/dashboard': 'Painel',
+                '/campaigns': 'Campanhas',
+                '/platforms': 'Plataformas',
+                '/ai-agent': 'Agente IA',
+              } as Record<string, string>)[location.pathname] || 'Painel'}
             </h2>
           </div>
 
@@ -277,20 +284,20 @@ export default function AppLayout() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate('/settings')}>
                   <User className="mr-2 h-4 w-4" />
-                  Profile
+                  Perfil
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate('/settings')}>
                   <Settings className="mr-2 h-4 w-4" />
-                  Settings
+                  Configurações
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout} className="text-destructive">
                   <LogOut className="mr-2 h-4 w-4" />
-                  Logout
+                  Sair
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

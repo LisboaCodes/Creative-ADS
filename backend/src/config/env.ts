@@ -72,6 +72,11 @@ const envSchema = z.object({
   // Sentry
   SENTRY_DSN: z.string().url().optional(),
 
+  // AI Providers
+  ANTHROPIC_API_KEY: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
+  AI_DEFAULT_PROVIDER: z.enum(['CLAUDE', 'OPENAI']).default('CLAUDE'),
+
   // Rate Limiting
   RATE_LIMIT_WINDOW_MS: z.string().transform(Number).default('60000'),
   RATE_LIMIT_MAX_REQUESTS: z.string().transform(Number).default('100'),

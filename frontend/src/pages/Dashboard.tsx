@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { formatCurrency, formatNumber, formatPercentage } from '../lib/utils';
@@ -11,7 +12,7 @@ import {
   Eye,
   Target
 } from 'lucide-react';
-import { subDays, format } from 'date-fns';
+import { subDays, format, startOfDay, endOfDay } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
 import { Badge } from '../components/ui/badge';
@@ -19,8 +20,10 @@ import ReactApexChart from 'react-apexcharts';
 import { ApexOptions } from 'apexcharts';
 
 export default function Dashboard() {
-  const startDate = subDays(new Date(), 30).toISOString();
-  const endDate = new Date().toISOString();
+  const { startDate, endDate } = useMemo(() => ({
+    startDate: startOfDay(subDays(new Date(), 30)).toISOString(),
+    endDate: endOfDay(new Date()).toISOString(),
+  }), []);
 
   const { data: metrics, isLoading } = useQuery({
     queryKey: ['overview-metrics', startDate, endDate],
@@ -75,7 +78,7 @@ export default function Dashboard() {
   // Stat Cards Configuration
   const stats = [
     {
-      name: 'Total Spend',
+      name: 'Gasto Total',
       value: metrics ? formatCurrency(metrics.spend) : '-',
       icon: DollarSign,
       color: 'text-blue-600',
@@ -93,7 +96,7 @@ export default function Dashboard() {
       trendUp: true,
     },
     {
-      name: 'Total Clicks',
+      name: 'Total de Cliques',
       value: metrics ? formatNumber(metrics.clicks) : '-',
       icon: MousePointerClick,
       color: 'text-purple-600',
@@ -102,7 +105,7 @@ export default function Dashboard() {
       trendUp: true,
     },
     {
-      name: 'Conversions',
+      name: 'Conversões',
       value: metrics ? formatNumber(metrics.conversions) : '-',
       icon: Users,
       color: 'text-orange-600',
@@ -150,7 +153,7 @@ export default function Dashboard() {
 
   const spendChartSeries = [
     {
-      name: 'Spend',
+      name: 'Gasto',
       data: spendChartData,
     },
   ];
@@ -240,9 +243,9 @@ export default function Dashboard() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Painel</h1>
         <p className="text-muted-foreground">
-          Overview of your advertising performance across all platforms
+          Visão geral do desempenho das suas campanhas em todas as plataformas
         </p>
       </div>
 
@@ -271,7 +274,7 @@ export default function Dashboard() {
                   <span className={`text-xs ${stat.trendUp ? 'text-green-600' : 'text-red-600'}`}>
                     {stat.trend}
                   </span>
-                  <span className="text-xs text-muted-foreground ml-1">vs last month</span>
+                  <span className="text-xs text-muted-foreground ml-1">vs mês anterior</span>
                 </div>
               </CardContent>
             </Card>
@@ -286,8 +289,8 @@ export default function Dashboard() {
             {/* Spending Over Time */}
             <Card>
               <CardHeader>
-                <CardTitle>Spending Over Time</CardTitle>
-                <CardDescription>Last 30 days spending trend</CardDescription>
+                <CardTitle>Gastos ao Longo do Tempo</CardTitle>
+                <CardDescription>Tendência de gastos dos últimos 30 dias</CardDescription>
               </CardHeader>
               <CardContent>
                 {spendChartData.length > 0 ? (
@@ -299,7 +302,7 @@ export default function Dashboard() {
                   />
                 ) : (
                   <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                    No spending data for this period
+                    Sem dados de gastos para este período
                   </div>
                 )}
               </CardContent>
@@ -308,8 +311,8 @@ export default function Dashboard() {
             {/* Platform Distribution */}
             <Card>
               <CardHeader>
-                <CardTitle>Platform Distribution</CardTitle>
-                <CardDescription>Spend distribution by platform</CardDescription>
+                <CardTitle>Distribuição por Plataforma</CardTitle>
+                <CardDescription>Distribuição de gastos por plataforma</CardDescription>
               </CardHeader>
               <CardContent>
                 {platformChartSeries.length > 0 ? (
@@ -321,7 +324,7 @@ export default function Dashboard() {
                   />
                 ) : (
                   <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                    No platform data available
+                    Sem dados de plataforma disponíveis
                   </div>
                 )}
               </CardContent>
@@ -335,16 +338,16 @@ export default function Dashboard() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Eye className="h-5 w-5 text-blue-600" />
-                  Performance Metrics
+                  Métricas de Desempenho
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Impressions</span>
+                  <span className="text-sm text-muted-foreground">Impressões</span>
                   <span className="font-semibold">{formatNumber(metrics.impressions)}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Reach</span>
+                  <span className="text-sm text-muted-foreground">Alcance</span>
                   <span className="font-semibold">{formatNumber(metrics.reach)}</span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -367,20 +370,20 @@ export default function Dashboard() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Target className="h-5 w-5 text-green-600" />
-                  Conversion Metrics
+                  Métricas de Conversão
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Total Conversions</span>
+                  <span className="text-sm text-muted-foreground">Total de Conversões</span>
                   <span className="font-semibold">{formatNumber(metrics.conversions)}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Conversion Rate</span>
+                  <span className="text-sm text-muted-foreground">Taxa de Conversão</span>
                   <Badge variant="success">{formatPercentage(metrics.conversionRate)}</Badge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Revenue</span>
+                  <span className="text-sm text-muted-foreground">Receita</span>
                   <span className="font-semibold">{formatCurrency(metrics.revenue)}</span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -393,24 +396,24 @@ export default function Dashboard() {
             {/* Quick Stats */}
             <Card>
               <CardHeader>
-                <CardTitle>Quick Stats</CardTitle>
-                <CardDescription>Key performance indicators</CardDescription>
+                <CardTitle>Resumo Rápido</CardTitle>
+                <CardDescription>Indicadores-chave de desempenho</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Active Campaigns</span>
+                  <span className="text-sm text-muted-foreground">Campanhas Ativas</span>
                   <Badge>{activeCampaigns}</Badge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Paused Campaigns</span>
+                  <span className="text-sm text-muted-foreground">Campanhas Pausadas</span>
                   <Badge variant="secondary">{pausedCampaigns}</Badge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Connected Platforms</span>
+                  <span className="text-sm text-muted-foreground">Plataformas Conectadas</span>
                   <Badge variant="outline">{connectedPlatforms}</Badge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Total Campaigns</span>
+                  <span className="text-sm text-muted-foreground">Total de Campanhas</span>
                   <Badge variant="outline">{campaignsData?.pagination?.total || 0}</Badge>
                 </div>
               </CardContent>
@@ -424,11 +427,11 @@ export default function Dashboard() {
         <Card>
           <CardContent className="py-12 text-center">
             <DollarSign className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No data available</h3>
+            <h3 className="text-lg font-semibold mb-2">Sem dados disponíveis</h3>
             <p className="text-muted-foreground mb-4">
-              Connect a platform to start tracking your advertising performance
+              Conecte uma plataforma para começar a acompanhar o desempenho das suas campanhas
             </p>
-            <Badge variant="outline">Get Started</Badge>
+            <Badge variant="outline">Começar</Badge>
           </CardContent>
         </Card>
       )}

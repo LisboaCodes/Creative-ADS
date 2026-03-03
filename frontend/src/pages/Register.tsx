@@ -26,10 +26,10 @@ export default function Register() {
       const { user, accessToken, refreshToken } = response.data.data;
 
       setAuth(user, accessToken, refreshToken);
-      toast.success('Registration successful!');
+      toast.success('Cadastro realizado com sucesso!');
       navigate('/dashboard');
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Registration failed');
+      toast.error(error.response?.data?.error || 'Falha no cadastro');
     } finally {
       setLoading(false);
     }
@@ -47,24 +47,24 @@ export default function Register() {
           </div>
           <h2 className="text-4xl font-bold tracking-tight">Multi Ads Platform</h2>
           <p className="mt-2 text-muted-foreground">
-            Create your account and start managing your ads
+            Crie sua conta e comece a gerenciar seus anúncios
           </p>
         </div>
 
         {/* Register Card */}
         <Card className="shadow-xl">
           <CardHeader>
-            <CardTitle>Sign Up</CardTitle>
-            <CardDescription>Fill in your details to create an account</CardDescription>
+            <CardTitle>Cadastrar</CardTitle>
+            <CardDescription>Preencha seus dados para criar uma conta</CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
+                <Label htmlFor="name">Nome Completo</Label>
                 <Input
                   id="name"
                   type="text"
-                  placeholder="John Doe"
+                  placeholder="João Silva"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   required
@@ -72,11 +72,11 @@ export default function Register() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">E-mail</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="name@example.com"
+                  placeholder="nome@exemplo.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -84,7 +84,7 @@ export default function Register() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">Senha</Label>
                 <Input
                   id="password"
                   type="password"
@@ -96,7 +96,7 @@ export default function Register() {
                   minLength={8}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Min 8 chars, with uppercase, lowercase and number
+                  Mínimo 8 caracteres, com maiúscula, minúscula e número
                 </p>
               </div>
             </CardContent>
@@ -105,17 +105,17 @@ export default function Register() {
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Creating account...
+                    Criando conta...
                   </>
                 ) : (
-                  'Sign Up'
+                  'Cadastrar'
                 )}
               </Button>
 
               <div className="text-center text-sm text-muted-foreground">
-                Already have an account?{' '}
+                Já tem uma conta?{' '}
                 <Link to="/login" className="font-medium text-primary hover:underline">
-                  Sign in
+                  Entrar
                 </Link>
               </div>
             </CardFooter>

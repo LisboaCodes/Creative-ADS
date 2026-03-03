@@ -9,8 +9,8 @@ import {
   type MetricData,
 } from './base.service';
 
-const FACEBOOK_GRAPH_API = 'https://graph.facebook.com/v18.0';
-const FACEBOOK_OAUTH_URL = 'https://www.facebook.com/v18.0/dialog/oauth';
+const FACEBOOK_GRAPH_API = 'https://graph.facebook.com/v21.0';
+const FACEBOOK_OAUTH_URL = 'https://www.facebook.com/v21.0/dialog/oauth';
 
 export class FacebookService extends BasePlatformService {
   platformType = PlatformType.FACEBOOK;
@@ -31,8 +31,6 @@ export class FacebookService extends BasePlatformService {
         'ads_management',
         'ads_read',
         'business_management',
-        'pages_read_engagement',
-        'pages_manage_ads',
       ].join(','),
     });
 
