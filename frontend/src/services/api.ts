@@ -6,6 +6,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000, // 30 second timeout
 });
 
 // Request interceptor to add auth token
@@ -37,11 +38,41 @@ const processQueue = (error: any, token: string | null = null) => {
   failedQueue = [];
 };
 
+// Retry logic with exponential backoff
+const MAX_RETRIES = 2;
+const RETRY_DELAY = 1000;
+
+function shouldRetry(error: any): boolean {
+  // Don't retry on auth errors, validation errors, or not found
+  if (error.response) {
+    const status = error.response.status;
+    if (status === 401 || status === 403 || status === 404 || status === 422 || status === 409) {
+      return false;
+    }
+    // Retry on 500, 502, 503, 504
+    if (status >= 500) return true;
+  }
+  // Retry on network errors and timeouts
+  if (error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK' || !error.response) {
+    return true;
+  }
+  return false;
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
+    // Retry logic (before token refresh check)
+    if (shouldRetry(error) && (!originalRequest._retryCount || originalRequest._retryCount < MAX_RETRIES)) {
+      originalRequest._retryCount = (originalRequest._retryCount || 0) + 1;
+      const delay = RETRY_DELAY * Math.pow(2, originalRequest._retryCount - 1);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return api(originalRequest);
+    }
+
+    // Token refresh logic
     if (error.response?.status === 401 && !originalRequest._retry) {
       // If already refreshing, queue this request
       if (isRefreshing) {

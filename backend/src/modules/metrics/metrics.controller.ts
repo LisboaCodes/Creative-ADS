@@ -1,13 +1,15 @@
 import { Response } from 'express';
+import { ZodError, z } from 'zod';
 import { metricsService } from './metrics.service';
 import { logger } from '../../utils/logger';
+import { AppError } from '../../utils/errors';
 import type { AuthRequest } from '../auth/auth.middleware';
-import { z } from 'zod';
 
 const metricsFiltersSchema = z.object({
   startDate: z.string().transform((str) => new Date(str)),
   endDate: z.string().transform((str) => new Date(str)),
   platformTypes: z.string().optional().transform((str) => str?.split(',') as any),
+  platformId: z.string().optional(),
 });
 
 export class MetricsController {
@@ -28,11 +30,14 @@ export class MetricsController {
         data: metrics,
       });
     } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
       logger.error('Get overview metrics error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to get metrics',
-      });
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 
@@ -57,11 +62,14 @@ export class MetricsController {
         data: metrics,
       });
     } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
       logger.error('Get campaign metrics error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to get campaign metrics',
-      });
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 
@@ -82,11 +90,14 @@ export class MetricsController {
         data: metrics,
       });
     } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
       logger.error('Get metrics by platform error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to get metrics by platform',
-      });
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 
@@ -111,11 +122,45 @@ export class MetricsController {
         data: metrics,
       });
     } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
       logger.error('Get time series metrics error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to get time series metrics',
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+  /**
+   * GET /api/metrics/financial
+   */
+  async getFinancial(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const filters = {
+        ...metricsFiltersSchema.parse(req.query),
+        groupBy: (req.query.groupBy as 'week' | 'biweekly' | 'monthly') || 'monthly',
+      };
+
+      const data = await metricsService.getFinancialBreakdown(req.user.userId, filters);
+
+      res.status(200).json({
+        success: true,
+        data,
       });
+    } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Get financial metrics error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 }

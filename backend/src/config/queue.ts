@@ -61,6 +61,19 @@ export const generateReportsQueue = new Queue('generate-reports', {
   },
 });
 
+export const cleanOldMetricsQueue = new Queue('clean-old-metrics', {
+  redis: redisConfig,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 2000,
+    },
+    removeOnComplete: true,
+    removeOnFail: false,
+  },
+});
+
 // Queue event listeners
 const setupQueueListeners = (queue: Queue.Queue, name: string) => {
   queue.on('completed', (job) => {
@@ -87,6 +100,7 @@ setupQueueListeners(syncCampaignsQueue, 'sync-campaigns');
 setupQueueListeners(calculateMetricsQueue, 'calculate-metrics');
 setupQueueListeners(checkAlertsQueue, 'check-alerts');
 setupQueueListeners(generateReportsQueue, 'generate-reports');
+setupQueueListeners(cleanOldMetricsQueue, 'clean-old-metrics');
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
@@ -96,6 +110,7 @@ process.on('SIGTERM', async () => {
     calculateMetricsQueue.close(),
     checkAlertsQueue.close(),
     generateReportsQueue.close(),
+    cleanOldMetricsQueue.close(),
   ]);
   logger.info('✅ Queues closed');
 });
@@ -105,4 +120,5 @@ export const queues = {
   calculateMetrics: calculateMetricsQueue,
   checkAlerts: checkAlertsQueue,
   generateReports: generateReportsQueue,
+  cleanOldMetrics: cleanOldMetricsQueue,
 };

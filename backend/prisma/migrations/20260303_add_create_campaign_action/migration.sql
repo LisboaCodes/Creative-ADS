@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "AIActionType" ADD VALUE 'CREATE_CAMPAIGN';

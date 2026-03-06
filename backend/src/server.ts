@@ -6,6 +6,8 @@ import { redis } from './config/redis';
 
 // Import jobs
 import './jobs/sync-campaigns.job';
+import './jobs/check-alerts.job';
+import './jobs/clean-old-metrics.job';
 
 const app = createApp();
 

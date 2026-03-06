@@ -2,16 +2,28 @@ import { PlatformType } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { encrypt, decrypt } from '../../utils/encryption';
 import { logger } from '../../utils/logger';
+import { NotFoundError, ServiceUnavailableError } from '../../utils/errors';
 import { facebookService } from './integrations/facebook.service';
+import { googleAdsService } from './integrations/google.service';
+import { tiktokService } from './integrations/tiktok.service';
+import { linkedinService } from './integrations/linkedin.service';
 import type { BasePlatformService } from './integrations/base.service';
 
 export class PlatformsService {
-  private platformServices: Map<PlatformType, BasePlatformService> = new Map([
+  private platformServices = new Map<PlatformType, BasePlatformService>([
     [PlatformType.FACEBOOK, facebookService],
     [PlatformType.INSTAGRAM, facebookService], // Instagram Ads uses Facebook's API
-    // [PlatformType.GOOGLE_ADS, googleService],
-    // [PlatformType.TIKTOK, tiktokService],
+    [PlatformType.GOOGLE_ADS, googleAdsService],
+    [PlatformType.TIKTOK, tiktokService],
+    [PlatformType.LINKEDIN, linkedinService],
   ]);
+
+  /**
+   * Get platform service by type (public alias)
+   */
+  getServiceForType(platformType: PlatformType): BasePlatformService {
+    return this.getPlatformService(platformType);
+  }
 
   /**
    * Get platform service by type
@@ -34,7 +46,7 @@ export class PlatformsService {
   }
 
   /**
-   * Connect platform account
+   * Connect platform account (supports multiple logins & ad accounts)
    */
   async connectPlatform(userId: string, platformType: PlatformType, code: string, state: string) {
     try {
@@ -48,61 +60,157 @@ export class PlatformsService {
       const service = this.getPlatformService(platformType);
 
       // Exchange code for tokens
-      const { accessToken, refreshToken, expiresAt, externalId } =
-        await service.exchangeCodeForTokens(code);
+      const result = await service.exchangeCodeForTokens(code);
+      const { accessToken, refreshToken, expiresAt } = result;
 
       // Encrypt tokens
       const encryptedAccessToken = encrypt(accessToken);
       const encryptedRefreshToken = refreshToken ? encrypt(refreshToken) : undefined;
 
-      // Check if platform already connected
-      const existingPlatform = await prisma.platform.findFirst({
-        where: {
-          userId,
-          type: platformType,
-          externalId,
-        },
-      });
+      // Get user profile to identify this login (platform-agnostic)
+      let platformLoginId: string | undefined;
+      let platformMetadata: any = undefined;
 
-      let platform;
+      try {
+        let profile: { id: string; name: string };
+        const resolvedPlatformType = platformType === PlatformType.INSTAGRAM ? PlatformType.FACEBOOK : platformType;
 
-      if (existingPlatform) {
-        // Update existing connection
-        platform = await prisma.platform.update({
-          where: { id: existingPlatform.id },
-          data: {
+        if (resolvedPlatformType === PlatformType.FACEBOOK) {
+          profile = await facebookService.getUserProfile(accessToken);
+          const businessManagers = await facebookService.getBusinessManagers(accessToken);
+          if (businessManagers.length > 0) {
+            platformMetadata = { businessManagers };
+          }
+        } else if (resolvedPlatformType === PlatformType.GOOGLE_ADS) {
+          profile = await googleAdsService.getUserProfile(accessToken);
+          // Google Ads metadata: MCC accounts are discovered via listAccessibleCustomers
+        } else if (resolvedPlatformType === PlatformType.TIKTOK) {
+          profile = await tiktokService.getUserProfile(accessToken);
+        } else if (resolvedPlatformType === PlatformType.LINKEDIN) {
+          profile = await linkedinService.getUserProfile(accessToken);
+        } else {
+          profile = { id: result.externalId, name: platformType };
+        }
+
+        // Upsert PlatformLogin with generic fields
+        const login = await prisma.platformLogin.upsert({
+          where: {
+            userId_platformType_externalUserId: {
+              userId,
+              platformType: resolvedPlatformType,
+              externalUserId: profile.id,
+            },
+          },
+          create: {
+            userId,
+            platformType: resolvedPlatformType,
             accessToken: encryptedAccessToken,
             refreshToken: encryptedRefreshToken,
             tokenExpiresAt: expiresAt,
-            isConnected: true,
-            lastSyncAt: new Date(),
+            externalUserId: profile.id,
+            externalUserName: profile.name,
+            platformMetadata: platformMetadata || undefined,
+          },
+          update: {
+            accessToken: encryptedAccessToken,
+            refreshToken: encryptedRefreshToken,
+            tokenExpiresAt: expiresAt,
+            externalUserName: profile.name,
+            platformMetadata: platformMetadata || undefined,
           },
         });
-      } else {
-        // Create new connection
-        platform = await prisma.platform.create({
-          data: {
+
+        platformLoginId = login.id;
+        logger.info(`PlatformLogin upserted for ${resolvedPlatformType} user ${profile.name} (${profile.id})`);
+      } catch (err: any) {
+        logger.warn(`Could not create PlatformLogin: ${err.message}`);
+      }
+
+      // Determine the list of ad accounts to connect
+      const adAccounts = (result as any).adAccounts || [{ id: result.externalId, name: result.externalId }];
+
+      // Build a map of BM → ad accounts for tagging (Facebook-specific)
+      const adAccountBMMap = new Map<string, { bmId: string; bmName: string }>();
+      const businessManagers = (platformMetadata?.businessManagers as Array<{ id: string; name: string }>) || [];
+      if (businessManagers.length > 0 && (platformType === PlatformType.FACEBOOK || platformType === PlatformType.INSTAGRAM)) {
+        for (const bm of businessManagers) {
+          try {
+            const bmAccounts = await facebookService.getBMAdAccounts(accessToken, bm.id);
+            for (const acc of bmAccounts) {
+              adAccountBMMap.set(acc.id, { bmId: bm.id, bmName: bm.name });
+            }
+          } catch {
+            // skip
+          }
+        }
+      }
+
+      const connectedPlatforms = [];
+
+      for (const account of adAccounts) {
+        const bmInfo = adAccountBMMap.get(account.id);
+
+        // Check if platform already connected
+        const existingPlatform = await prisma.platform.findFirst({
+          where: {
             userId,
             type: platformType,
-            name: `${platformType} Account`,
-            externalId,
-            accessToken: encryptedAccessToken,
-            refreshToken: encryptedRefreshToken,
-            tokenExpiresAt: expiresAt,
-            isConnected: true,
-            lastSyncAt: new Date(),
+            externalId: account.id,
           },
+        });
+
+        let platform;
+
+        if (existingPlatform) {
+          // Update existing connection
+          platform = await prisma.platform.update({
+            where: { id: existingPlatform.id },
+            data: {
+              accessToken: encryptedAccessToken,
+              refreshToken: encryptedRefreshToken,
+              tokenExpiresAt: expiresAt,
+              isConnected: true,
+              lastSyncAt: new Date(),
+              name: account.name || `${platformType} - ${account.id}`,
+              platformLoginId: platformLoginId || undefined,
+              businessManagerId: bmInfo?.bmId || undefined,
+              businessManagerName: bmInfo?.bmName || undefined,
+            },
+          });
+        } else {
+          // Create new connection
+          platform = await prisma.platform.create({
+            data: {
+              userId,
+              type: platformType,
+              name: account.name || `${platformType} - ${account.id}`,
+              externalId: account.id,
+              accessToken: encryptedAccessToken,
+              refreshToken: encryptedRefreshToken,
+              tokenExpiresAt: expiresAt,
+              isConnected: true,
+              lastSyncAt: new Date(),
+              platformLoginId: platformLoginId || undefined,
+              businessManagerId: bmInfo?.bmId || undefined,
+              businessManagerName: bmInfo?.bmName || undefined,
+            },
+          });
+        }
+
+        connectedPlatforms.push({
+          id: platform.id,
+          type: platform.type,
+          name: platform.name,
+          isConnected: platform.isConnected,
         });
       }
 
-      logger.info(`Platform connected: ${platformType} for user ${userId}`);
+      logger.info(`Connected ${connectedPlatforms.length} ad accounts for ${platformType}, user ${userId}`);
 
-      return {
-        id: platform.id,
-        type: platform.type,
-        name: platform.name,
-        isConnected: platform.isConnected,
-      };
+      // Return first for backward compat, but all are connected
+      return connectedPlatforms.length === 1
+        ? connectedPlatforms[0]
+        : { accounts: connectedPlatforms, count: connectedPlatforms.length };
     } catch (error: any) {
       logger.error('Connect platform error:', error);
       throw new Error(error.message || 'Failed to connect platform');
@@ -123,11 +231,294 @@ export class PlatformsService {
         isConnected: true,
         lastSyncAt: true,
         createdAt: true,
+        platformLoginId: true,
+        businessManagerId: true,
+        businessManagerName: true,
       },
       orderBy: { createdAt: 'desc' },
     });
 
     return platforms;
+  }
+
+  /**
+   * Get all platform logins for a user (with linked account counts)
+   */
+  async getPlatformLogins(userId: string) {
+    const logins = await prisma.platformLogin.findMany({
+      where: { userId },
+      include: {
+        platforms: {
+          where: { isConnected: true },
+          select: {
+            id: true,
+            type: true,
+            name: true,
+            externalId: true,
+            isConnected: true,
+            lastSyncAt: true,
+            businessManagerId: true,
+            businessManagerName: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return logins.map((login) => ({
+      id: login.id,
+      platformType: login.platformType,
+      externalUserId: login.externalUserId,
+      externalUserName: login.externalUserName,
+      platformMetadata: login.platformMetadata,
+      tokenExpiresAt: login.tokenExpiresAt,
+      createdAt: login.createdAt,
+      updatedAt: login.updatedAt,
+      accountCount: login.platforms.length,
+      platforms: login.platforms,
+    }));
+  }
+
+  /**
+   * Get BM detail: ad accounts, pages, and pixels
+   */
+  async getBMDetail(userId: string, bmId: string) {
+    // Find a login that has this BM
+    const logins = await prisma.platformLogin.findMany({
+      where: { userId },
+    });
+
+    let accessToken: string | null = null;
+    let loginWithBM: any = null;
+
+    for (const login of logins) {
+      const metadata = (login.platformMetadata as any) || {};
+      const bms = metadata.businessManagers || [];
+      if (bms.some((bm: any) => bm.id === bmId)) {
+        try {
+          accessToken = decrypt(login.accessToken);
+          loginWithBM = login;
+          break;
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    if (!accessToken || !loginWithBM) {
+      throw new NotFoundError('Business Manager não encontrado ou sem acesso');
+    }
+
+    // Get BM name from the stored data
+    const metadata = (loginWithBM.platformMetadata as any) || {};
+    const bms = metadata.businessManagers || [];
+    const bmInfo = bms.find((bm: any) => bm.id === bmId);
+
+    // Fetch ad accounts, pages, and pixels in parallel
+    const [adAccounts, pages, pixels] = await Promise.all([
+      facebookService.getBMAdAccounts(accessToken, bmId),
+      facebookService.getBMPages(accessToken, bmId),
+      facebookService.getBMPixels(accessToken, bmId),
+    ]);
+
+    // Match ad accounts with our Platform records
+    const platformRecords = await prisma.platform.findMany({
+      where: {
+        userId,
+        businessManagerId: bmId,
+        isConnected: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        externalId: true,
+        lastSyncAt: true,
+      },
+    });
+
+    const enrichedAdAccounts = adAccounts.map((acc) => {
+      const platformRecord = platformRecords.find((p) => p.externalId === acc.id);
+      return {
+        ...acc,
+        platformId: platformRecord?.id,
+        lastSyncAt: platformRecord?.lastSyncAt,
+        isTracked: !!platformRecord,
+      };
+    });
+
+    return {
+      id: bmId,
+      name: bmInfo?.name || bmId,
+      adAccounts: enrichedAdAccounts,
+      pages,
+      pixels,
+    };
+  }
+
+  /**
+   * Re-sync a login: rediscover BMs, ad accounts
+   */
+  async resyncLogin(userId: string, loginId: string) {
+    const login = await prisma.platformLogin.findFirst({
+      where: { id: loginId, userId },
+    });
+
+    if (!login) {
+      throw new NotFoundError('Login não encontrado');
+    }
+
+    let accessToken: string;
+    try {
+      accessToken = decrypt(login.accessToken);
+    } catch {
+      throw new Error('Token inválido. Reconecte a conta.');
+    }
+
+    const allAdAccounts: Array<{ id: string; name: string; bmId?: string; bmName?: string }> = [];
+    const seenIds = new Set<string>();
+    let metadataCount = 0;
+
+    if (login.platformType === PlatformType.FACEBOOK || login.platformType === PlatformType.INSTAGRAM) {
+      // Facebook: Rediscover BMs and ad accounts
+      const businessManagers = await facebookService.getBusinessManagers(accessToken);
+      metadataCount = businessManagers.length;
+
+      await prisma.platformLogin.update({
+        where: { id: loginId },
+        data: {
+          platformMetadata: businessManagers.length > 0 ? { businessManagers } : undefined,
+        },
+      });
+
+      for (const bm of businessManagers) {
+        const bmAccounts = await facebookService.getBMAdAccounts(accessToken, bm.id);
+        for (const acc of bmAccounts) {
+          if (!seenIds.has(acc.id)) {
+            seenIds.add(acc.id);
+            allAdAccounts.push({ id: acc.id, name: acc.name, bmId: bm.id, bmName: bm.name });
+          }
+        }
+      }
+    } else {
+      // For other platforms: re-discover accounts via service
+      const service = this.getPlatformService(login.platformType);
+      try {
+        // Use a dummy exchange to rediscover accounts (won't work without code)
+        // Instead, we refresh the token and list existing linked accounts
+        if (login.refreshToken) {
+          const decryptedRefresh = decrypt(login.refreshToken);
+          const newTokens = await service.refreshAccessToken(decryptedRefresh);
+          accessToken = newTokens.accessToken;
+
+          const encryptedNewAccess = encrypt(newTokens.accessToken);
+          const encryptedNewRefresh = newTokens.refreshToken ? encrypt(newTokens.refreshToken) : login.refreshToken;
+
+          await prisma.platformLogin.update({
+            where: { id: loginId },
+            data: {
+              accessToken: encryptedNewAccess,
+              refreshToken: encryptedNewRefresh,
+              tokenExpiresAt: newTokens.expiresAt,
+            },
+          });
+        }
+      } catch (err: any) {
+        logger.warn(`Could not refresh token during resync: ${err.message}`);
+      }
+
+      // Get existing linked platforms as the discovered accounts
+      const linkedPlatforms = await prisma.platform.findMany({
+        where: { platformLoginId: loginId, isConnected: true },
+        select: { externalId: true, name: true },
+      });
+
+      for (const p of linkedPlatforms) {
+        if (!seenIds.has(p.externalId)) {
+          seenIds.add(p.externalId);
+          allAdAccounts.push({ id: p.externalId, name: p.name });
+        }
+      }
+    }
+
+    const encryptedAccessToken = login.accessToken; // Already encrypted
+
+    // Upsert discovered ad accounts
+    let newCount = 0;
+    for (const account of allAdAccounts) {
+      const existing = await prisma.platform.findFirst({
+        where: { userId, type: login.platformType, externalId: account.id },
+      });
+
+      if (existing) {
+        await prisma.platform.update({
+          where: { id: existing.id },
+          data: {
+            platformLoginId: loginId,
+            businessManagerId: account.bmId || undefined,
+            businessManagerName: account.bmName || undefined,
+            accessToken: encryptedAccessToken,
+            isConnected: true,
+          },
+        });
+      } else {
+        await prisma.platform.create({
+          data: {
+            userId,
+            type: login.platformType,
+            name: account.bmName ? `${account.name} (${account.bmName})` : account.name,
+            externalId: account.id,
+            accessToken: encryptedAccessToken,
+            tokenExpiresAt: login.tokenExpiresAt,
+            isConnected: true,
+            lastSyncAt: new Date(),
+            platformLoginId: loginId,
+            businessManagerId: account.bmId || undefined,
+            businessManagerName: account.bmName || undefined,
+          },
+        });
+        newCount++;
+      }
+    }
+
+    logger.info(`Resync login ${loginId}: ${metadataCount} metadata entries, ${allAdAccounts.length} accounts (${newCount} new)`);
+
+    return {
+      businessManagers: metadataCount,
+      adAccounts: allAdAccounts.length,
+      newAccounts: newCount,
+    };
+  }
+
+  /**
+   * Disconnect a login and all associated accounts
+   */
+  async disconnectLogin(userId: string, loginId: string) {
+    const login = await prisma.platformLogin.findFirst({
+      where: { id: loginId, userId },
+      include: { platforms: true },
+    });
+
+    if (!login) {
+      throw new NotFoundError('Login não encontrado');
+    }
+
+    // Disconnect all platforms linked to this login
+    await prisma.platform.updateMany({
+      where: { platformLoginId: loginId },
+      data: { isConnected: false },
+    });
+
+    // Delete the login record
+    await prisma.platformLogin.delete({
+      where: { id: loginId },
+    });
+
+    logger.info(`Login ${loginId} disconnected, ${login.platforms.length} accounts affected`);
+
+    return {
+      message: 'Login desconectado com sucesso',
+      accountsDisconnected: login.platforms.length,
+    };
   }
 
   /**
@@ -139,7 +530,7 @@ export class PlatformsService {
     });
 
     if (!platform) {
-      throw new Error('Platform not found');
+      throw new NotFoundError('Plataforma não encontrada');
     }
 
     await prisma.platform.update({
@@ -153,7 +544,89 @@ export class PlatformsService {
   }
 
   /**
-   * Get decrypted access token for a platform
+   * Get pixel info for a platform
+   */
+  async getPixelInfo(userId: string, platformId: string) {
+    const platform = await prisma.platform.findFirst({
+      where: { id: platformId, userId },
+    });
+
+    if (!platform || !platform.isConnected) {
+      throw new NotFoundError('Plataforma não encontrada ou não conectada');
+    }
+
+    let accessToken: string;
+    try {
+      accessToken = decrypt(platform.accessToken);
+    } catch {
+      return { pixels: [], demo: true };
+    }
+
+    if (platform.type === 'FACEBOOK' || platform.type === 'INSTAGRAM') {
+      const pixels = await facebookService.getPixels(accessToken, platform.externalId);
+      return { pixels };
+    }
+
+    return { pixels: [] };
+  }
+
+  /**
+   * Get Facebook pages for a platform (pages the user administrates)
+   */
+  async getPages(userId: string, platformId: string) {
+    const platform = await prisma.platform.findFirst({
+      where: { id: platformId, userId },
+    });
+
+    if (!platform || !platform.isConnected) {
+      throw new Error('Plataforma não encontrada ou não conectada');
+    }
+
+    let accessToken: string;
+    try {
+      accessToken = decrypt(platform.accessToken);
+    } catch {
+      return [];
+    }
+
+    if (platform.type === 'FACEBOOK' || platform.type === 'INSTAGRAM') {
+      const pages = await facebookService.getUserPages(accessToken);
+      // Return without the page access token for security
+      return pages.map(({ accessToken: _, ...page }) => page);
+    }
+
+    return [];
+  }
+
+  /**
+   * Get recent posts from a Facebook page
+   */
+  async getPagePosts(userId: string, platformId: string, pageId: string) {
+    const platform = await prisma.platform.findFirst({
+      where: { id: platformId, userId },
+    });
+
+    if (!platform || !platform.isConnected) {
+      throw new Error('Plataforma não encontrada ou não conectada');
+    }
+
+    let accessToken: string;
+    try {
+      accessToken = decrypt(platform.accessToken);
+    } catch {
+      return [];
+    }
+
+    if (platform.type === 'FACEBOOK' || platform.type === 'INSTAGRAM') {
+      return facebookService.getPagePosts(accessToken, pageId);
+    }
+
+    return [];
+  }
+
+  /**
+   * Get decrypted access token for a platform.
+   * If token is expired or about to expire (within 5 min), try to refresh it.
    */
   async getAccessToken(platformId: string): Promise<string> {
     const platform = await prisma.platform.findUnique({
@@ -161,16 +634,70 @@ export class PlatformsService {
     });
 
     if (!platform) {
-      throw new Error('Platform not found');
+      throw new NotFoundError('Plataforma não encontrada');
     }
 
     if (!platform.isConnected) {
-      throw new Error('Platform is not connected');
+      throw new ServiceUnavailableError('Plataforma não está conectada');
     }
 
-    // Check if token is expired
-    if (platform.tokenExpiresAt && platform.tokenExpiresAt < new Date()) {
-      throw new Error('Access token expired');
+    const fiveMinutesFromNow = new Date(Date.now() + 5 * 60 * 1000);
+    const isExpiredOrExpiring =
+      platform.tokenExpiresAt && platform.tokenExpiresAt < fiveMinutesFromNow;
+
+    if (isExpiredOrExpiring && platform.refreshToken) {
+      try {
+        logger.info(`Token expired/expiring for platform ${platformId}, refreshing...`);
+
+        const service = this.getPlatformService(platform.type);
+        const decryptedRefreshToken = decrypt(platform.refreshToken);
+        const newTokens = await service.refreshAccessToken(decryptedRefreshToken);
+
+        const encryptedAccessToken = encrypt(newTokens.accessToken);
+        const encryptedRefreshToken = newTokens.refreshToken
+          ? encrypt(newTokens.refreshToken)
+          : platform.refreshToken;
+
+        await prisma.platform.update({
+          where: { id: platformId },
+          data: {
+            accessToken: encryptedAccessToken,
+            refreshToken: encryptedRefreshToken,
+            tokenExpiresAt: newTokens.expiresAt,
+          },
+        });
+
+        // Also update the PlatformLogin if linked
+        if (platform.platformLoginId) {
+          await prisma.platformLogin.update({
+            where: { id: platform.platformLoginId },
+            data: {
+              accessToken: encryptedAccessToken,
+              refreshToken: encryptedRefreshToken,
+              tokenExpiresAt: newTokens.expiresAt,
+            },
+          });
+        }
+
+        logger.info(`Token refreshed successfully for platform ${platformId}`);
+        return newTokens.accessToken;
+      } catch (error: any) {
+        logger.error(`Failed to refresh token for platform ${platformId}:`, error);
+        // If refresh fails and token is truly expired, throw
+        if (platform.tokenExpiresAt && platform.tokenExpiresAt < new Date()) {
+          throw new ServiceUnavailableError(
+            'Token expirado e não foi possível renovar. Reconecte a plataforma.'
+          );
+        }
+        // Otherwise, try using the current token (it may still be valid for a few minutes)
+      }
+    }
+
+    // Token is expired with no refresh token available
+    if (platform.tokenExpiresAt && platform.tokenExpiresAt < new Date() && !platform.refreshToken) {
+      throw new ServiceUnavailableError(
+        'Token expirado. Reconecte a plataforma.'
+      );
     }
 
     return decrypt(platform.accessToken);
@@ -196,7 +723,7 @@ export class PlatformsService {
       accessToken = decrypt(platform.accessToken);
     } catch {
       logger.info(`Platform ${platformId} has non-encrypted token (demo account), skipping external sync`);
-      return { synced: 0, metricsSynced: 0, demo: true };
+      return { synced: 0, metricsSynced: 0, creativesSynced: 0, demo: true };
     }
 
     // Get campaigns from platform
@@ -234,21 +761,42 @@ export class PlatformsService {
       });
     }
 
-    // Sync metrics for each campaign (last 30 days)
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 30);
-
+    // Sync metrics for each campaign using real campaign dates
     let metricsSynced = 0;
+    let creativesSynced = 0;
 
-    // Get all campaigns for this platform to sync metrics
+    // Get all campaigns for this platform to sync metrics & creatives
     const dbCampaigns = await prisma.campaign.findMany({
       where: { platformId: platform.id },
     });
 
+    const now = new Date();
+    const maxLookbackDays = 90;
+    const maxLookbackDate = new Date();
+    maxLookbackDate.setDate(maxLookbackDate.getDate() - maxLookbackDays);
+
     for (const campaign of dbCampaigns) {
+      // Calculate the real date range for this campaign
+      let campaignStartDate: Date;
+      if (campaign.startDate && campaign.startDate >= maxLookbackDate) {
+        campaignStartDate = campaign.startDate;
+      } else if (campaign.startDate && campaign.startDate < maxLookbackDate) {
+        campaignStartDate = maxLookbackDate; // Cap at 90 days ago
+      } else {
+        campaignStartDate = new Date();
+        campaignStartDate.setDate(campaignStartDate.getDate() - 30); // Default 30d
+      }
+
+      let campaignEndDate: Date;
+      if (campaign.endDate && campaign.endDate < now) {
+        campaignEndDate = campaign.endDate; // Campaign already ended
+      } else {
+        campaignEndDate = now; // Still running or no end date
+      }
+
+      // Sync metrics
       try {
-        const metricsData = await service.getMetrics(accessToken, campaign.externalId, startDate, endDate);
+        const metricsData = await service.getMetrics(accessToken, campaign.externalId, campaignStartDate, campaignEndDate);
 
         for (const metric of metricsData) {
           await prisma.metric.upsert({
@@ -294,6 +842,41 @@ export class PlatformsService {
       } catch (error: any) {
         logger.warn(`Failed to sync metrics for campaign ${campaign.externalId}: ${error.message}`);
       }
+
+      // Sync ad creatives
+      try {
+        const creativesData = await service.getAdCreatives(accessToken, campaign.externalId);
+
+        for (const creative of creativesData) {
+          await prisma.adCreative.upsert({
+            where: {
+              campaignId_externalId: {
+                campaignId: campaign.id,
+                externalId: creative.externalId,
+              },
+            },
+            create: {
+              campaignId: campaign.id,
+              externalId: creative.externalId,
+              name: creative.name,
+              thumbnailUrl: creative.thumbnailUrl,
+              imageUrl: creative.imageUrl,
+              body: creative.body,
+              title: creative.title,
+            },
+            update: {
+              name: creative.name,
+              thumbnailUrl: creative.thumbnailUrl,
+              imageUrl: creative.imageUrl,
+              body: creative.body,
+              title: creative.title,
+            },
+          });
+          creativesSynced++;
+        }
+      } catch (error: any) {
+        logger.warn(`Failed to sync creatives for campaign ${campaign.externalId}: ${error.message}`);
+      }
     }
 
     // Update last sync time
@@ -302,9 +885,11 @@ export class PlatformsService {
       data: { lastSyncAt: new Date() },
     });
 
-    logger.info(`Synced ${campaigns.length} campaigns and ${metricsSynced} metrics for platform ${platformId}`);
+    logger.info(
+      `Synced ${campaigns.length} campaigns, ${metricsSynced} metrics, ${creativesSynced} creatives for platform ${platformId}`
+    );
 
-    return { synced: campaigns.length, metricsSynced };
+    return { synced: campaigns.length, metricsSynced, creativesSynced };
   }
 }
 

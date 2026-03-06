@@ -1,7 +1,16 @@
 import { Response } from 'express';
+import { ZodError, z } from 'zod';
 import { AuthRequest } from '../auth/auth.middleware';
 import { aiService } from './ai.service';
+import { logger } from '../../utils/logger';
+import { AppError } from '../../utils/errors';
 import { chatMessageSchema, bulkApproveSchema } from './ai.schemas';
+
+const briefingSchema = z.object({
+  platformId: z.string(),
+  startDate: z.string().transform((str) => new Date(str)),
+  endDate: z.string().transform((str) => new Date(str)),
+});
 
 export class AIController {
   async chat(req: AuthRequest, res: Response) {
@@ -14,10 +23,14 @@ export class AIController {
         data: result,
       });
     } catch (error: any) {
-      return res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to process message',
-      });
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Chat error:', error);
+      return res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 
@@ -30,10 +43,11 @@ export class AIController {
         data: conversations,
       });
     } catch (error: any) {
-      return res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to fetch conversations',
-      });
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Get conversations error:', error);
+      return res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 
@@ -49,10 +63,11 @@ export class AIController {
         data: conversation,
       });
     } catch (error: any) {
-      return res.status(404).json({
-        success: false,
-        error: error.message || 'Conversation not found',
-      });
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Get conversation error:', error);
+      return res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 
@@ -65,10 +80,11 @@ export class AIController {
         data: actions,
       });
     } catch (error: any) {
-      return res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to fetch pending actions',
-      });
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Get pending actions error:', error);
+      return res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 
@@ -84,10 +100,11 @@ export class AIController {
         data: action,
       });
     } catch (error: any) {
-      return res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to approve action',
-      });
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Approve action error:', error);
+      return res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 
@@ -103,10 +120,32 @@ export class AIController {
         data: action,
       });
     } catch (error: any) {
-      return res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to reject action',
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Reject action error:', error);
+      return res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  async briefing(req: AuthRequest, res: Response) {
+    try {
+      const parsed = briefingSchema.parse(req.body);
+      const result = await aiService.generateClientBriefing(req.user!.userId, parsed);
+
+      return res.status(200).json({
+        success: true,
+        data: result,
       });
+    } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Briefing error:', error);
+      return res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 
@@ -123,10 +162,14 @@ export class AIController {
         data: result,
       });
     } catch (error: any) {
-      return res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to bulk approve actions',
-      });
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Bulk approve error:', error);
+      return res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 }

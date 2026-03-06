@@ -22,7 +22,7 @@ export class ClaudeProvider implements IAIProvider {
 
     const response = await this.client.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
+      max_tokens: 2048,
       system: systemPrompt,
       messages: filteredMessages,
     });

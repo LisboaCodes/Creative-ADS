@@ -1,11 +1,12 @@
 import { syncCampaignsQueue } from '../config/queue';
 import { prisma } from '../config/database';
 import { platformsService } from '../modules/platforms/platforms.service';
+import { notificationsService } from '../modules/notifications/notifications.service';
 import { logger } from '../utils/logger';
 import { env } from '../config/env';
 
-// Process sync job
-syncCampaignsQueue.process(async (job) => {
+// Process individual platform sync job
+syncCampaignsQueue.process('sync-platform', async (job) => {
   const { platformId } = job.data;
 
   logger.info(`Processing sync job for platform: ${platformId}`);
@@ -14,8 +15,46 @@ syncCampaignsQueue.process(async (job) => {
     await platformsService.syncPlatformCampaigns(platformId);
     logger.info(`Sync completed for platform: ${platformId}`);
   } catch (error: any) {
-    logger.error(`Sync failed for platform ${platformId}:`, error);
+    logger.error(`Sync failed for platform ${platformId}:`, {
+      message: error.message,
+      response: error.response?.data,
+      stack: error.stack,
+    });
     throw error; // Bull will retry
+  }
+});
+
+// Sync all platforms (called by recurring job)
+syncCampaignsQueue.process('sync-all-platforms', async (job) => {
+  logger.info('Running sync for all connected platforms');
+
+  const platforms = await prisma.platform.findMany({
+    where: { isConnected: true },
+    select: { id: true, userId: true },
+  });
+
+  logger.info(`Found ${platforms.length} connected platforms`);
+
+  // Track per-user sync counts
+  const userSyncCounts = new Map<string, number>();
+
+  // Add individual sync jobs
+  for (const platform of platforms) {
+    await syncCampaignsQueue.add('sync-platform', { platformId: platform.id });
+    userSyncCounts.set(platform.userId, (userSyncCounts.get(platform.userId) || 0) + 1);
+  }
+
+  // Notify users that sync started
+  for (const [userId, count] of userSyncCounts) {
+    try {
+      await notificationsService.createNotification(userId, {
+        title: 'Sync concluido',
+        message: `${count} plataforma(s) sincronizada(s) com sucesso.`,
+        type: 'SUCCESS',
+      });
+    } catch (error: any) {
+      logger.error(`Failed to create sync notification for user ${userId}:`, error.message);
+    }
   }
 });
 
@@ -50,23 +89,6 @@ async function scheduleRecurringSyncs() {
 
   logger.info(`Scheduled recurring sync every ${env.SYNC_CAMPAIGNS_INTERVAL}`);
 }
-
-// Sync all platforms (called by recurring job)
-syncCampaignsQueue.process('sync-all-platforms', async (job) => {
-  logger.info('Running sync for all connected platforms');
-
-  const platforms = await prisma.platform.findMany({
-    where: { isConnected: true },
-    select: { id: true },
-  });
-
-  logger.info(`Found ${platforms.length} connected platforms`);
-
-  // Add individual sync jobs
-  for (const platform of platforms) {
-    await syncCampaignsQueue.add('sync-platform', { platformId: platform.id });
-  }
-});
 
 // Start recurring syncs on server start
 scheduleRecurringSyncs().catch((error) => {

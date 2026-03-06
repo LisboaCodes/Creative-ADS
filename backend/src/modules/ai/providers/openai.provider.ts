@@ -24,8 +24,8 @@ export class OpenAIProvider implements IAIProvider {
     ];
 
     const response = await this.client.chat.completions.create({
-      model: 'gpt-4o',
-      max_tokens: 4096,
+      model: 'gpt-4o-mini',
+      max_tokens: 2048,
       messages: openaiMessages,
     });
 

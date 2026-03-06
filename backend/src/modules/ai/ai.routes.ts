@@ -10,6 +10,9 @@ router.use(authenticate);
 // Chat
 router.post('/chat', (req, res) => aiController.chat(req, res));
 
+// Client Briefing
+router.post('/briefing', (req, res) => aiController.briefing(req, res));
+
 // Conversations
 router.get('/conversations', (req, res) => aiController.getConversations(req, res));
 router.get('/conversations/:id', (req, res) => aiController.getConversation(req, res));

@@ -24,3 +24,22 @@ export const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+/**
+ * Per-user rate limiter - keyed by authenticated user ID.
+ * More generous than general limiter since it's per-user, not per-IP.
+ */
+export const userLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute window
+  max: isDev ? 500 : 200, // 200 requests per user per minute
+  keyGenerator: (req) => {
+    return (req as any).user?.userId || req.ip || 'anonymous';
+  },
+  message: {
+    success: false,
+    error: 'Muitas requisições. Tente novamente em instantes.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => !((req as any).user), // Only apply to authenticated users
+});

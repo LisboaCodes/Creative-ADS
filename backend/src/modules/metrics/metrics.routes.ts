@@ -24,4 +24,9 @@ router.get('/time-series', authenticate, (req, res) =>
   metricsController.getTimeSeries(req, res)
 );
 
+// Get financial breakdown
+router.get('/financial', authenticate, (req, res) =>
+  metricsController.getFinancial(req, res)
+);
+
 export default router;

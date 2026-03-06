@@ -69,12 +69,36 @@ model User {
 
   // Relations
   platforms         Platform[]
+  platformLogins    PlatformLogin[]
   alerts            Alert[]
   reports           Report[]
   aiConversations   AIConversation[]
+  notifications     Notification[]
+  automationRules   AutomationRule[]
+  auditLogs         AuditLog[]
 
   @@index([email])
   @@map("users")
+}
+
+model PlatformLogin {
+  id               String       @id @default(cuid())
+  userId           String
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platformType     PlatformType
+  accessToken      String       // Encrypted token
+  refreshToken     String?
+  tokenExpiresAt   DateTime?
+  externalUserId   String       // Platform-specific user/account ID
+  externalUserName String?      // Profile/account display name
+  platformMetadata Json?        // Platform-specific data (BMs for FB, MCC for Google, etc.)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  platforms        Platform[]   // Ad accounts linked to this login
+
+  @@unique([userId, platformType, externalUserId])
+  @@index([userId])
+  @@map("platform_logins")
 }
 
 model Platform {
@@ -93,6 +117,12 @@ model Platform {
   isConnected     Boolean      @default(true)
   lastSyncAt      DateTime?
 
+  // Login & BM association
+  platformLoginId     String?
+  platformLogin       PlatformLogin? @relation(fields: [platformLoginId], references: [id], onDelete: SetNull)
+  businessManagerId   String?
+  businessManagerName String?
+
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
@@ -104,6 +134,7 @@ model Platform {
   @@unique([userId, type, externalId])
   @@index([userId])
   @@index([type])
+  @@index([platformLoginId])
   @@map("platforms")
 }
 
@@ -134,6 +165,8 @@ model Campaign {
   platformId      String
   platform        Platform       @relation(fields: [platformId], references: [id], onDelete: Cascade)
   metrics         Metric[]
+  adCreatives     AdCreative[]
+  tags            CampaignTag[]
 
   @@unique([platformId, externalId])
   @@index([platformId])
@@ -141,6 +174,28 @@ model Campaign {
   @@index([status])
   @@index([createdAt])
   @@map("campaigns")
+}
+
+model AdCreative {
+  id              String   @id @default(cuid())
+
+  externalId      String   // Platform's creative ID
+  name            String?
+  thumbnailUrl    String?
+  imageUrl        String?
+  body            String?  // Ad text/copy
+  title           String?  // Ad headline
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  campaignId      String
+  campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, externalId])
+  @@index([campaignId])
+  @@map("ad_creatives")
 }
 
 model Metric {
@@ -278,6 +333,7 @@ enum AIActionType {
   PAUSE_CAMPAIGN
   ACTIVATE_CAMPAIGN
   UPDATE_BUDGET
+  CREATE_CAMPAIGN
 }
 
 enum AIActionStatus {
@@ -344,4 +400,166 @@ model AIAction {
   @@index([conversationId])
   @@index([status])
   @@map("ai_actions")
+}
+
+// Notifications
+
+enum NotificationType {
+  INFO
+  WARNING
+  SUCCESS
+  ERROR
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  title     String
+  message   String
+  type      NotificationType @default(INFO)
+  isRead    Boolean          @default(false)
+  metadata  Json?
+
+  createdAt DateTime         @default(now())
+
+  // Relations
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// Automation Rules
+enum AutomationRuleStatus {
+  ACTIVE
+  PAUSED
+  DELETED
+}
+
+model AutomationRule {
+  id              String               @id @default(cuid())
+  name            String
+  description     String?
+  status          AutomationRuleStatus @default(ACTIVE)
+
+  // Condition: metric, operator, value, period
+  metric          String               // 'ctr', 'cpc', 'roas', 'spend', 'cpm', 'conversions'
+  operator        String               // 'lt', 'gt', 'lte', 'gte', 'eq'
+  value           Float
+  periodDays      Int                  @default(3) // Evaluate over X days
+
+  // Action to take when condition is met
+  actionType      String               // 'pause', 'activate', 'increase_budget', 'decrease_budget', 'notify'
+  actionValue     Float?               // e.g., percentage for budget changes
+
+  // Scope: which campaigns this rule applies to
+  applyTo         String               @default("all") // 'all', 'active', 'specific'
+  campaignIds     String[]             // If applyTo = 'specific'
+  platformTypes   PlatformType[]
+
+  // Execution tracking
+  lastRunAt       DateTime?
+  lastTriggeredAt DateTime?
+  triggerCount    Int                  @default(0)
+  executionLog    Json?                // Last execution results
+
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  // Relations
+  userId          String
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("automation_rules")
+}
+
+// Campaign Tags
+model CampaignTag {
+  id         String   @id @default(cuid())
+  name       String
+  color      String   @default("#6B7280") // hex color
+
+  createdAt  DateTime @default(now())
+
+  // Relations
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  userId     String
+
+  @@unique([campaignId, name])
+  @@index([campaignId])
+  @@index([userId])
+  @@map("campaign_tags")
+}
+
+// Audit Log
+model AuditLog {
+  id          String   @id @default(cuid())
+  entityType  String   // 'campaign', 'platform', 'automation_rule'
+  entityId    String
+  action      String   // 'status_changed', 'budget_updated', 'created', 'deleted', 'rule_triggered'
+  oldValue    Json?
+  newValue    Json?
+  source      String   @default("manual") // 'manual', 'ai_agent', 'automation_rule', 'sync'
+  description String?
+
+  createdAt   DateTime @default(now())
+
+  // Relations
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─── Campaign Library (Best Practices Knowledge Base) ─────────────
+
+model CampaignTemplate {
+  id              String   @id @default(cuid())
+
+  // Classification
+  name            String
+  niche           String   // e-commerce, infoprodutos, saas, servicos-locais, imobiliario, saude, educacao, financas, moda, restaurantes
+  platform        String   // FACEBOOK, GOOGLE_ADS, TIKTOK, LINKEDIN, MULTI
+  objective       String   // conversao, trafego, mensagens, leads, reconhecimento, engajamento, vendas-catalogo
+  category        String   // bdcap, asc, cbo, abo, performance-max, spark-ads, lead-gen, remarketing, lookalike
+
+  // Campaign structure
+  campaignSetup   Json     // { buyingType, optimizationGoal, bidStrategy, budgetType, budgetRange, specialAdCategories }
+  adSetSetup      Json     // { targeting, placements, schedule, optimizationEvent, attribution }
+  creativeSetup   Json     // { format, specs, copyTemplates, visualGuidelines, ctaOptions, hooks }
+
+  // Performance benchmarks
+  benchmarks      Json     // { ctr, cpc, cpm, cpa, roas, conversionRate, cplead }
+
+  // Content
+  description     String   @db.Text
+  strategy        String   @db.Text  // Detailed strategy explanation
+  tips            String[] // Array of pro tips
+  commonMistakes  String[] // What NOT to do
+  scalingGuide    String?  @db.Text  // How to scale after validation
+
+  // Metadata
+  source          String?  // Where the best practice comes from
+  year            Int      @default(2025)
+  difficulty      String   @default("intermediario") // iniciante, intermediario, avancado
+  verified        Boolean  @default(true)
+  rating          Float    @default(4.5)
+  thumbnailUrl    String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([niche])
+  @@index([platform])
+  @@index([objective])
+  @@index([category])
+  @@map("campaign_templates")
 }

@@ -34,6 +34,65 @@ export interface MetricData {
   metadata?: any;
 }
 
+export interface AdCreativeData {
+  externalId: string;
+  name?: string;
+  thumbnailUrl?: string;
+  imageUrl?: string;
+  body?: string;
+  title?: string;
+}
+
+export interface AdAccountData {
+  id: string;
+  name: string;
+}
+
+export interface CreateCampaignInput {
+  name: string;
+  objective: string;
+  status?: string;
+  specialAdCategories?: string[];
+  dailyBudget?: number;
+  lifetimeBudget?: number;
+}
+
+export interface CreateAdSetInput {
+  name: string;
+  campaignId: string;
+  targeting: {
+    geoLocations?: { countries?: string[]; cities?: Array<{ key: string }> };
+    ageMin?: number;
+    ageMax?: number;
+    genders?: number[];
+    interests?: Array<{ id: string; name: string }>;
+  };
+  billingEvent?: string;
+  optimizationGoal?: string;
+  dailyBudget?: number;
+  startTime?: string;
+  endTime?: string;
+}
+
+export interface CreateAdCreativeInput {
+  name: string;
+  pageId: string;
+  message?: string;
+  linkUrl?: string;
+  imageHash?: string;
+  imageUrl?: string;
+  headline?: string;
+  description?: string;
+  callToAction?: string;
+}
+
+export interface CreateAdInput {
+  name: string;
+  adSetId: string;
+  creativeId: string;
+  status?: string;
+}
+
 /**
  * Base interface for all platform integrations
  */
@@ -87,6 +146,56 @@ export interface IPlatformService {
     campaignExternalId: string,
     budget: { daily?: number; lifetime?: number }
   ): Promise<void>;
+
+  /**
+   * Get ad creatives for a campaign
+   */
+  getAdCreatives(
+    accessToken: string,
+    campaignExternalId: string
+  ): Promise<AdCreativeData[]>;
+
+  /**
+   * Create a new campaign on the platform
+   */
+  createCampaign?(
+    accessToken: string,
+    accountId: string,
+    data: CreateCampaignInput
+  ): Promise<{ id: string }>;
+
+  /**
+   * Create a new ad set
+   */
+  createAdSet?(
+    accessToken: string,
+    data: CreateAdSetInput
+  ): Promise<{ id: string }>;
+
+  /**
+   * Create ad creative
+   */
+  createAdCreative?(
+    accessToken: string,
+    accountId: string,
+    data: CreateAdCreativeInput
+  ): Promise<{ id: string }>;
+
+  /**
+   * Create an ad
+   */
+  createAd?(
+    accessToken: string,
+    data: CreateAdInput
+  ): Promise<{ id: string }>;
+
+  /**
+   * Search targeting options (interests, behaviors)
+   */
+  getTargetingOptions?(
+    accessToken: string,
+    query: string
+  ): Promise<Array<{ id: string; name: string; type: string; audienceSize?: number }>>;
 }
 
 /**
@@ -114,6 +223,10 @@ export abstract class BasePlatformService implements IPlatformService {
     campaignExternalId: string,
     budget: { daily?: number; lifetime?: number }
   ): Promise<void>;
+  abstract getAdCreatives(
+    accessToken: string,
+    campaignExternalId: string
+  ): Promise<AdCreativeData[]>;
 
   /**
    * Calculate derived metrics

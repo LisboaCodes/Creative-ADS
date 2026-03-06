@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env';
+import { requestIdMiddleware } from './middleware/request-id.middleware';
 import { requestLogger } from './middleware/logger.middleware';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import { generalLimiter } from './middleware/rate-limit.middleware';
@@ -15,6 +16,11 @@ import platformsRoutes from './modules/platforms/platforms.routes';
 import campaignsRoutes from './modules/campaigns/campaigns.routes';
 import metricsRoutes from './modules/metrics/metrics.routes';
 import aiRoutes from './modules/ai/ai.routes';
+import notificationsRoutes from './modules/notifications/notifications.routes';
+import adLibraryRoutes from './modules/ad-library/ad-library.routes';
+import reportsRoutes from './modules/reports/reports.routes';
+import automationRoutes from './modules/automation/automation.routes';
+import campaignLibraryRoutes from './modules/campaign-library/campaign-library.routes';
 
 // Swagger configuration
 const swaggerOptions = {
@@ -49,6 +55,9 @@ const swaggerSpec = swaggerJsdoc(swaggerOptions);
 export function createApp(): Application {
   const app = express();
 
+  // Request ID middleware (must be first)
+  app.use(requestIdMiddleware);
+
   // Security middleware
   app.use(helmet());
   app.use(
@@ -73,6 +82,11 @@ export function createApp(): Application {
   app.use('/api/campaigns', campaignsRoutes);
   app.use('/api/metrics', metricsRoutes);
   app.use('/api/ai', aiRoutes);
+  app.use('/api/notifications', notificationsRoutes);
+  app.use('/api/ad-library', adLibraryRoutes);
+  app.use('/api/reports', reportsRoutes);
+  app.use('/api/automation', automationRoutes);
+  app.use('/api/campaign-library', campaignLibraryRoutes);
 
   // Swagger documentation
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));

@@ -1,13 +1,30 @@
 import { Response } from 'express';
+import multer from 'multer';
+import { ZodError } from 'zod';
 import { campaignsService } from './campaigns.service';
 import { logger } from '../../utils/logger';
+import { AppError } from '../../utils/errors';
 import type { AuthRequest } from '../auth/auth.middleware';
 import {
   campaignFiltersSchema,
   updateCampaignStatusSchema,
   updateCampaignBudgetSchema,
   bulkActionSchema,
+  createCampaignSchema,
+  aiSuggestSchema,
 } from './campaigns.schemas';
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 30 * 1024 * 1024 }, // 30MB
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Apenas imagens e vídeos são permitidos'));
+    }
+  },
+});
 
 export class CampaignsController {
   /**
@@ -27,11 +44,14 @@ export class CampaignsController {
         data: result,
       });
     } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
       logger.error('Get campaigns error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to get campaigns',
-      });
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 
@@ -54,11 +74,11 @@ export class CampaignsController {
         data: campaign,
       });
     } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
       logger.error('Get campaign error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to get campaign',
-      });
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 
@@ -83,11 +103,14 @@ export class CampaignsController {
         data: campaign,
       });
     } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
       logger.error('Update campaign status error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to update campaign status',
-      });
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 
@@ -112,11 +135,245 @@ export class CampaignsController {
         data: campaign,
       });
     } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
       logger.error('Update campaign budget error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to update campaign budget',
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
+   * POST /api/campaigns
+   */
+  async createCampaign(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const data = createCampaignSchema.parse(req.body);
+      const result = await campaignsService.createCampaign(
+        req.user.userId,
+        data.platformId,
+        data
+      );
+
+      res.status(201).json({
+        success: true,
+        data: result,
       });
+    } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Create campaign error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
+   * GET /api/campaigns/targeting/search
+   */
+  async searchTargeting(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const { platformId, q, type, locationTypes } = req.query as { platformId: string; q: string; type?: string; locationTypes?: string };
+      if (!platformId || !q) {
+        return res.status(400).json({ success: false, error: 'platformId and q are required' });
+      }
+
+      const results = await campaignsService.searchTargeting(
+        req.user.userId,
+        platformId,
+        q,
+        type,
+        locationTypes
+      );
+
+      res.status(200).json({
+        success: true,
+        data: results,
+      });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Search targeting error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
+   * POST /api/campaigns/upload-image
+   */
+  async uploadImage(req: AuthRequest, res: Response) {
+    upload.single('image')(req, res, async (err: any) => {
+      try {
+        if (err) {
+          return res.status(400).json({ success: false, error: err.message });
+        }
+
+        if (!req.user) {
+          return res.status(401).json({ success: false, error: 'Not authenticated' });
+        }
+
+        const file = (req as any).file;
+        if (!file) {
+          return res.status(400).json({ success: false, error: 'Nenhuma imagem enviada' });
+        }
+
+        const { platformId } = req.body;
+        if (!platformId) {
+          return res.status(400).json({ success: false, error: 'platformId é obrigatório' });
+        }
+
+        const result = await campaignsService.uploadAdImage(
+          req.user.userId,
+          platformId,
+          file.buffer
+        );
+
+        res.status(200).json({
+          success: true,
+          data: result,
+        });
+      } catch (error: any) {
+        if (error instanceof AppError) {
+          return res.status(error.statusCode).json({ success: false, error: error.message });
+        }
+        logger.error('Upload image error:', error);
+        res.status(500).json({ success: false, error: error.message || 'Internal error' });
+      }
+    });
+  }
+
+  /**
+   * POST /api/campaigns/ai-suggest
+   */
+  async aiSuggest(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const data = aiSuggestSchema.parse(req.body);
+      const result = await campaignsService.getAISuggestion(
+        req.user.userId,
+        data.type,
+        data.context || {}
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('AI suggest error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
+   * POST /api/campaigns/:id/tags
+   */
+  async addTag(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ success: false, error: 'Not authenticated' });
+      const { name, color } = req.body;
+      const tag = await campaignsService.addTag(req.user.userId, req.params.id, name, color);
+      res.status(201).json({ success: true, data: tag });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Add tag error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
+   * DELETE /api/campaigns/:id/tags/:tagId
+   */
+  async removeTag(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ success: false, error: 'Not authenticated' });
+      await campaignsService.removeTag(req.user.userId, req.params.tagId);
+      res.status(200).json({ success: true, message: 'Tag removida' });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Remove tag error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
+   * GET /api/campaigns/audit-log
+   */
+  async getAuditLog(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ success: false, error: 'Not authenticated' });
+      const { entityId } = req.query as { entityId?: string };
+      const logs = await campaignsService.getAuditLog(req.user.userId, entityId);
+      res.status(200).json({ success: true, data: logs });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Get audit log error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
+   * GET /api/campaigns/forecast
+   */
+  async getForecast(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ success: false, error: 'Not authenticated' });
+      const { campaignId } = req.query as { campaignId?: string };
+      const forecast = await campaignsService.getForecast(req.user.userId, campaignId);
+      res.status(200).json({ success: true, data: forecast });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Get forecast error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
+   * GET /api/campaigns/insights
+   */
+  async getProactiveInsights(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ success: false, error: 'Not authenticated' });
+      const insights = await campaignsService.getProactiveInsights(req.user.userId);
+      res.status(200).json({ success: true, data: insights });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Get insights error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 
@@ -141,11 +398,14 @@ export class CampaignsController {
         data: result,
       });
     } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
       logger.error('Bulk action error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to perform bulk action',
-      });
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
 }

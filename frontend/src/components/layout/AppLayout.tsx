@@ -1,5 +1,7 @@
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../../services/api';
 import {
   BarChart3,
   Megaphone,
@@ -13,6 +15,17 @@ import {
   ChevronRight,
   X,
   Bot,
+  Library,
+  CheckCheck,
+  AlertTriangle,
+  AlertCircle,
+  Info,
+  CheckCircle2,
+  Stethoscope,
+  FileText,
+  Wallet,
+  Zap,
+  BookOpen,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -25,26 +38,91 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '../ui/popover';
 import { Badge } from '../ui/badge';
 import { cn } from '../../lib/utils';
+
+const notificationIcons: Record<string, typeof Info> = {
+  INFO: Info,
+  WARNING: AlertTriangle,
+  SUCCESS: CheckCircle2,
+  ERROR: AlertCircle,
+};
+
+const notificationColors: Record<string, string> = {
+  INFO: 'text-blue-500',
+  WARNING: 'text-orange-500',
+  SUCCESS: 'text-green-500',
+  ERROR: 'text-red-500',
+};
+
+function formatTimeAgo(date: string) {
+  const diff = Date.now() - new Date(date).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'agora';
+  if (minutes < 60) return `${minutes}min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
 
 export default function AppLayout() {
   const { user, clearAuth } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
 
   const handleLogout = () => {
     clearAuth();
     navigate('/login');
   };
 
+  // Fetch notifications
+  const { data: notifData } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: async () => {
+      const res = await api.get('/api/notifications');
+      return res.data.data;
+    },
+    refetchInterval: 30000, // Refresh every 30s
+  });
+
+  const markAllRead = useMutation({
+    mutationFn: () => api.post('/api/notifications/read-all'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
+
+  const markOneRead = useMutation({
+    mutationFn: (id: string) => api.patch(`/api/notifications/${id}/read`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
+
+  const unreadCount = notifData?.unreadCount || 0;
+  const notifications = notifData?.notifications || [];
+
   const navigation = [
     { name: 'Painel', href: '/dashboard', icon: BarChart3 },
     { name: 'Campanhas', href: '/campaigns', icon: Megaphone },
     { name: 'Plataformas', href: '/platforms', icon: Plug },
+    { name: 'Ad Library', href: '/ad-library', icon: Library },
     { name: 'Agente IA', href: '/ai-agent', icon: Bot },
+    { name: 'Automação', href: '/automation', icon: Zap },
+    { name: 'Diagnosticos', href: '/diagnostics', icon: Stethoscope },
+    { name: 'Relatorios', href: '/reports', icon: FileText },
+    { name: 'Financeiro', href: '/financial', icon: Wallet },
+    { name: 'Biblioteca', href: '/campaign-library', icon: BookOpen },
   ];
 
   const isActive = (path: string) => location.pathname === path;
@@ -252,23 +330,97 @@ export default function AppLayout() {
                 '/dashboard': 'Painel',
                 '/campaigns': 'Campanhas',
                 '/platforms': 'Plataformas',
+                '/ad-library': 'Ad Library',
                 '/ai-agent': 'Agente IA',
+                '/automation': 'Automação',
+                '/diagnostics': 'Diagnosticos',
+                '/reports': 'Relatorios',
+                '/financial': 'Financeiro',
+                '/campaign-library': 'Biblioteca de Campanhas',
               } as Record<string, string>)[location.pathname] || 'Painel'}
             </h2>
           </div>
 
           {/* Header Actions */}
           <div className="flex items-center gap-2">
-            {/* Notifications */}
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-5 w-5" />
-              <Badge
-                variant="destructive"
-                className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs"
-              >
-                3
-              </Badge>
-            </Button>
+            {/* Notifications Bell */}
+            <Popover open={notifOpen} onOpenChange={setNotifOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative">
+                  <Bell className="h-5 w-5" />
+                  {unreadCount > 0 && (
+                    <Badge
+                      variant="destructive"
+                      className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs"
+                    >
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </Badge>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80 p-0">
+                <div className="flex items-center justify-between px-4 py-3 border-b">
+                  <h3 className="font-semibold text-sm">Notificações</h3>
+                  {unreadCount > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto py-1 px-2 text-xs"
+                      onClick={() => markAllRead.mutate()}
+                    >
+                      <CheckCheck className="h-3 w-3 mr-1" />
+                      Marcar todas como lidas
+                    </Button>
+                  )}
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-muted-foreground">
+                      Nenhuma notificação
+                    </div>
+                  ) : (
+                    notifications.slice(0, 20).map((notif: any) => {
+                      const IconComponent = notificationIcons[notif.type] || Info;
+                      const colorClass = notificationColors[notif.type] || 'text-blue-500';
+                      return (
+                        <div
+                          key={notif.id}
+                          className={cn(
+                            'flex items-start gap-3 px-4 py-3 border-b last:border-0 cursor-pointer hover:bg-muted/50 transition-colors',
+                            !notif.isRead && 'bg-primary/5'
+                          )}
+                          onClick={() => {
+                            if (!notif.isRead) {
+                              markOneRead.mutate(notif.id);
+                            }
+                            if (notif.metadata?.campaignId) {
+                              setNotifOpen(false);
+                              navigate(`/diagnostics?campaignId=${notif.metadata.campaignId}&alert=${encodeURIComponent(notif.title)}`);
+                            }
+                          }}
+                        >
+                          <IconComponent className={cn('h-4 w-4 mt-0.5 flex-shrink-0', colorClass)} />
+                          <div className="flex-1 min-w-0">
+                            <p className={cn('text-sm', !notif.isRead && 'font-medium')}>
+                              {notif.title}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                              {notif.message}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {formatTimeAgo(notif.createdAt)}
+                            </p>
+                          </div>
+                          {!notif.isRead && (
+                            <div className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-1.5" />
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
 
             {/* User Menu */}
             <DropdownMenu>
