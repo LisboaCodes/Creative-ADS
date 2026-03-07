@@ -26,6 +26,7 @@ import {
   Wallet,
   Zap,
   BookOpen,
+  MessageSquare,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -123,6 +124,7 @@ export default function AppLayout() {
     { name: 'Relatorios', href: '/reports', icon: FileText },
     { name: 'Financeiro', href: '/financial', icon: Wallet },
     { name: 'Biblioteca', href: '/campaign-library', icon: BookOpen },
+    { name: 'WhatsApp', href: '/whatsapp', icon: MessageSquare },
   ];
 
   const isActive = (path: string) => location.pathname === path;
@@ -337,6 +339,7 @@ export default function AppLayout() {
                 '/reports': 'Relatorios',
                 '/financial': 'Financeiro',
                 '/campaign-library': 'Biblioteca de Campanhas',
+                '/whatsapp': 'WhatsApp',
               } as Record<string, string>)[location.pathname] || 'Painel'}
             </h2>
           </div>

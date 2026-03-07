@@ -40,6 +40,7 @@ export const createCampaignSchema = z.object({
   lifetimeBudget: z.number().positive().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
+  saveAsDraft: z.boolean().optional().default(false),
   targeting: z
     .object({
       geoLocations: z
@@ -70,6 +71,44 @@ export const createCampaignSchema = z.object({
     .optional(),
 });
 
+export const applyTemplateSchema = z.object({
+  templateId: z.string(),
+  platformId: z.string(),
+  campaignName: z.string().min(1, 'Nome da campanha é obrigatório'),
+  budget: z.number().positive(),
+  budgetType: z.enum(['daily', 'lifetime']),
+  targeting: z.object({
+    geoLocations: z.object({
+      countries: z.array(z.string()).optional(),
+      cities: z.array(z.object({ key: z.string() })).optional(),
+    }).optional(),
+    ageMin: z.number().min(13).max(65).optional(),
+    ageMax: z.number().min(13).max(65).optional(),
+    genders: z.array(z.number()).optional(),
+    interests: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
+  }).optional(),
+  pageId: z.string().optional(),
+  websiteUrl: z.string().optional(),
+  creative: z.object({
+    headline: z.string().optional(),
+    primaryText: z.string().optional(),
+    description: z.string().optional(),
+    cta: z.string().optional(),
+    imageHash: z.string().optional(),
+  }).optional(),
+});
+
+export const updateDraftSchema = z.object({
+  name: z.string().min(1).optional(),
+  objective: z.string().optional(),
+  dailyBudget: z.number().positive().optional(),
+  lifetimeBudget: z.number().positive().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  targeting: z.any().optional(),
+  creative: z.any().optional(),
+});
+
 export const aiSuggestSchema = z.object({
   type: z.enum(['names', 'audience', 'budget', 'copy']),
   context: z.object({
@@ -87,3 +126,5 @@ export type BulkActionInput = z.infer<typeof bulkActionSchema>;
 export type CampaignFiltersInput = z.infer<typeof campaignFiltersSchema>;
 export type CreateCampaignInput = z.infer<typeof createCampaignSchema>;
 export type AISuggestInput = z.infer<typeof aiSuggestSchema>;
+export type ApplyTemplateInput = z.infer<typeof applyTemplateSchema>;
+export type UpdateDraftInput = z.infer<typeof updateDraftSchema>;

@@ -28,12 +28,20 @@ syncCampaignsQueue.process('sync-platform', async (job) => {
 syncCampaignsQueue.process('sync-all-platforms', async (job) => {
   logger.info('Running sync for all connected platforms');
 
+  // Only sync FACEBOOK platforms (Instagram uses the same API/ad accounts, syncing both creates duplicates)
+  // Also skip demo accounts
   const platforms = await prisma.platform.findMany({
-    where: { isConnected: true },
+    where: {
+      isConnected: true,
+      type: 'FACEBOOK',
+      NOT: {
+        externalId: { startsWith: 'act_fb_' },
+      },
+    },
     select: { id: true, userId: true },
   });
 
-  logger.info(`Found ${platforms.length} connected platforms`);
+  logger.info(`Found ${platforms.length} connected Facebook platforms to sync`);
 
   // Track per-user sync counts
   const userSyncCounts = new Map<string, number>();

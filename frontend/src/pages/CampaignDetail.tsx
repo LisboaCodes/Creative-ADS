@@ -20,6 +20,9 @@ import {
   History,
   Copy,
   Activity,
+  MessageSquare,
+  Send,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
@@ -38,6 +41,7 @@ export default function CampaignDetail() {
   const [selectedCreative, setSelectedCreative] = useState<any>(null);
   const [newTagName, setNewTagName] = useState('');
   const [showTagInput, setShowTagInput] = useState(false);
+  const [sendingUpdate, setSendingUpdate] = useState(false);
 
   const { data: campaign, isLoading, refetch } = useQuery({
     queryKey: ['campaign', id],
@@ -96,6 +100,20 @@ export default function CampaignDetail() {
     const level = score >= 80 ? 'Excelente' : score >= 60 ? 'Bom' : score >= 40 ? 'Atenção' : 'Crítico';
     const color = score >= 80 ? 'text-green-600' : score >= 60 ? 'text-blue-600' : score >= 40 ? 'text-yellow-600' : 'text-red-600';
     return { score, level, color };
+  };
+
+  const handleSendClientUpdate = async () => {
+    if (!campaign) return;
+    setSendingUpdate(true);
+    try {
+      const res = await api.post(`/api/campaigns/${campaign.id}/send-client-update`);
+      const data = res.data.data;
+      toast.success(`Atualização enviada para ${data.groups.join(', ')}`);
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Falha ao enviar atualização');
+    } finally {
+      setSendingUpdate(false);
+    }
   };
 
   const handleToggleStatus = async () => {
@@ -228,6 +246,20 @@ export default function CampaignDetail() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSendClientUpdate}
+            disabled={sendingUpdate}
+            className="text-green-600 border-green-200 hover:bg-green-50 hover:text-green-700"
+          >
+            {sendingUpdate ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <MessageSquare className="h-4 w-4 mr-2" />
+            )}
+            {sendingUpdate ? 'Enviando...' : 'Enviar ao Cliente'}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => refetch()}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Atualizar

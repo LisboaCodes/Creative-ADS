@@ -495,29 +495,43 @@ export class PlatformsService {
   async disconnectLogin(userId: string, loginId: string) {
     const login = await prisma.platformLogin.findFirst({
       where: { id: loginId, userId },
-      include: { platforms: true },
+      include: { platforms: { select: { id: true } } },
     });
 
     if (!login) {
       throw new NotFoundError('Login não encontrado');
     }
 
-    // Disconnect all platforms linked to this login
-    await prisma.platform.updateMany({
-      where: { platformLoginId: loginId },
-      data: { isConnected: false },
-    });
+    const platformIds = login.platforms.map((p) => p.id);
+
+    if (platformIds.length > 0) {
+      // Delete all campaign data linked to these platforms
+      const campaignIds = await prisma.campaign.findMany({
+        where: { platformId: { in: platformIds } },
+        select: { id: true },
+      }).then((cs) => cs.map((c) => c.id));
+
+      if (campaignIds.length > 0) {
+        await prisma.adCreative.deleteMany({ where: { campaignId: { in: campaignIds } } });
+        await prisma.metric.deleteMany({ where: { campaignId: { in: campaignIds } } });
+        await prisma.campaignTag.deleteMany({ where: { campaignId: { in: campaignIds } } });
+        await prisma.campaign.deleteMany({ where: { id: { in: campaignIds } } });
+      }
+
+      // Delete the platforms themselves
+      await prisma.platform.deleteMany({ where: { id: { in: platformIds } } });
+    }
 
     // Delete the login record
     await prisma.platformLogin.delete({
       where: { id: loginId },
     });
 
-    logger.info(`Login ${loginId} disconnected, ${login.platforms.length} accounts affected`);
+    logger.info(`Login ${loginId} disconnected and all data deleted: ${platformIds.length} accounts`);
 
     return {
-      message: 'Login desconectado com sucesso',
-      accountsDisconnected: login.platforms.length,
+      message: 'Login desconectado e todos os dados removidos',
+      accountsDisconnected: platformIds.length,
     };
   }
 
@@ -533,14 +547,25 @@ export class PlatformsService {
       throw new NotFoundError('Plataforma não encontrada');
     }
 
-    await prisma.platform.update({
-      where: { id: platformId },
-      data: { isConnected: false },
-    });
+    // Delete all campaign data linked to this platform
+    const campaignIds = await prisma.campaign.findMany({
+      where: { platformId },
+      select: { id: true },
+    }).then((cs) => cs.map((c) => c.id));
 
-    logger.info(`Platform disconnected: ${platformId}`);
+    if (campaignIds.length > 0) {
+      await prisma.adCreative.deleteMany({ where: { campaignId: { in: campaignIds } } });
+      await prisma.metric.deleteMany({ where: { campaignId: { in: campaignIds } } });
+      await prisma.campaignTag.deleteMany({ where: { campaignId: { in: campaignIds } } });
+      await prisma.campaign.deleteMany({ where: { id: { in: campaignIds } } });
+    }
 
-    return { message: 'Platform disconnected successfully' };
+    // Delete the platform itself
+    await prisma.platform.delete({ where: { id: platformId } });
+
+    logger.info(`Platform ${platformId} deleted with ${campaignIds.length} campaigns`);
+
+    return { message: 'Plataforma e campanhas removidas com sucesso' };
   }
 
   /**
@@ -776,6 +801,9 @@ export class PlatformsService {
     maxLookbackDate.setDate(maxLookbackDate.getDate() - maxLookbackDays);
 
     for (const campaign of dbCampaigns) {
+      // Skip draft campaigns (no externalId)
+      if (!campaign.externalId) continue;
+
       // Calculate the real date range for this campaign
       let campaignStartDate: Date;
       if (campaign.startDate && campaign.startDate >= maxLookbackDate) {
@@ -796,7 +824,7 @@ export class PlatformsService {
 
       // Sync metrics
       try {
-        const metricsData = await service.getMetrics(accessToken, campaign.externalId, campaignStartDate, campaignEndDate);
+        const metricsData = await service.getMetrics(accessToken, campaign.externalId!, campaignStartDate, campaignEndDate);
 
         for (const metric of metricsData) {
           await prisma.metric.upsert({
@@ -845,7 +873,7 @@ export class PlatformsService {
 
       // Sync ad creatives
       try {
-        const creativesData = await service.getAdCreatives(accessToken, campaign.externalId);
+        const creativesData = await service.getAdCreatives(accessToken, campaign.externalId!);
 
         for (const creative of creativesData) {
           await prisma.adCreative.upsert({

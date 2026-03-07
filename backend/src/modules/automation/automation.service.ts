@@ -2,6 +2,7 @@ import { prisma } from '../../config/database';
 import { logger } from '../../utils/logger';
 import { campaignsService } from '../campaigns/campaigns.service';
 import { notificationsService } from '../notifications/notifications.service';
+import { whatsAppNotificationsService } from '../whatsapp/whatsapp-notifications.service';
 
 export class AutomationService {
   async getRules(userId: string) {
@@ -237,6 +238,14 @@ export class AutomationService {
       type: rule.actionType === 'notify' ? 'INFO' : 'WARNING',
       metadata: { ruleId: rule.id, campaignId: campaign.id, action: rule.actionType },
     });
+
+    // WhatsApp notification (fire-and-forget)
+    whatsAppNotificationsService.notifyGroups(userId, 'AUTOMATION_TRIGGERED', {
+      rule: { name: rule.name },
+      campaign: { name: campaign.name, platformId: campaign.platformId },
+      action: rule.actionType,
+      metricValue,
+    }).catch(err => logger.warn('WhatsApp automation notification failed', err));
   }
 
   private async logAudit(

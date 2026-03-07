@@ -1,6 +1,7 @@
 import { checkAlertsQueue } from '../config/queue';
 import { prisma } from '../config/database';
 import { notificationsService } from '../modules/notifications/notifications.service';
+import { whatsAppNotificationsService } from '../modules/whatsapp/whatsapp-notifications.service';
 import { logger } from '../utils/logger';
 import { env } from '../config/env';
 
@@ -60,7 +61,7 @@ async function checkUserAlerts(userId: string, since: Date) {
 
     // Check for low CTR
     if (ctr < 0.5 && totalImpressions > 1000) {
-      await createAlertIfNew(
+      const isNew = await createAlertIfNew(
         userId,
         `CTR baixo: ${campaign.name}`,
         `A campanha "${campaign.name}" tem CTR de ${ctr.toFixed(2)}% nos ultimos 30 dias (abaixo de 0.5%). Considere revisar o criativo ou o publico-alvo.`,
@@ -68,11 +69,19 @@ async function checkUserAlerts(userId: string, since: Date) {
         `ctr-low-${campaign.id}`,
         { campaignId: campaign.id, alertType: 'CTR_LOW' }
       );
+
+      if (isNew) {
+        whatsAppNotificationsService.notifyGroups(userId, 'PERFORMANCE_ALERT', {
+          campaign: { name: campaign.name, platformId: campaign.platformId },
+          alertType: 'CTR_LOW',
+          metrics: { ctr, impressions: totalImpressions, clicks: totalClicks },
+        }).catch(err => logger.warn('WhatsApp alert notification failed', err));
+      }
     }
 
     // Check for negative ROAS
     if (roas < 1 && totalSpend > 50) {
-      await createAlertIfNew(
+      const isNew = await createAlertIfNew(
         userId,
         `ROAS negativo: ${campaign.name}`,
         `A campanha "${campaign.name}" tem ROAS de ${roas.toFixed(2)}x (gasto R$${totalSpend.toFixed(2)}, receita R$${totalRevenue.toFixed(2)}). Considere pausar ou otimizar.`,
@@ -80,6 +89,14 @@ async function checkUserAlerts(userId: string, since: Date) {
         `roas-negative-${campaign.id}`,
         { campaignId: campaign.id, alertType: 'ROAS_NEGATIVE' }
       );
+
+      if (isNew) {
+        whatsAppNotificationsService.notifyGroups(userId, 'PERFORMANCE_ALERT', {
+          campaign: { name: campaign.name, platformId: campaign.platformId },
+          alertType: 'ROAS_NEGATIVE',
+          metrics: { roas, spend: totalSpend, revenue: totalRevenue },
+        }).catch(err => logger.warn('WhatsApp alert notification failed', err));
+      }
     }
   }
 }
@@ -94,7 +111,7 @@ async function createAlertIfNew(
   type: 'INFO' | 'WARNING' | 'SUCCESS' | 'ERROR',
   dedupKey: string,
   metadata?: Record<string, any>
-) {
+): Promise<boolean> {
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   // Check for recent notification with same title to avoid spam
@@ -106,10 +123,11 @@ async function createAlertIfNew(
     },
   });
 
-  if (existing) return;
+  if (existing) return false;
 
   await notificationsService.createNotification(userId, { title, message, type, metadata });
   logger.info(`Alert created for user ${userId}: ${title}`);
+  return true;
 }
 
 // Notify after sync completes

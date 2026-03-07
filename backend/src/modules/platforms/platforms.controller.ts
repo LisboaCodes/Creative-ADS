@@ -4,6 +4,8 @@ import { logger } from '../../utils/logger';
 import { AppError } from '../../utils/errors';
 import type { AuthRequest } from '../auth/auth.middleware';
 import { PlatformType } from '@prisma/client';
+import { prisma } from '../../config/database';
+import { cache } from '../../config/redis';
 
 export class PlatformsController {
   /**
@@ -304,6 +306,9 @@ export class PlatformsController {
 
       const result = await platformsService.syncPlatformCampaigns(id);
 
+      // Clear campaigns cache so new data appears immediately
+      await cache.delPattern(`campaigns:${req.user.userId}:*`);
+
       res.status(200).json({
         success: true,
         data: result,
@@ -313,6 +318,78 @@ export class PlatformsController {
         return res.status(error.statusCode).json({ success: false, error: error.message });
       }
       logger.error('Sync platform error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
+   * POST /api/platforms/sync-all
+   */
+  async syncAllPlatforms(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const userId = req.user.userId;
+
+      // Only sync FACEBOOK platforms (Instagram uses the same API/accounts, avoid double sync)
+      // Also skip demo accounts (externalId starting with act_fb_, ig_, gads_, tt_)
+      const platforms = await prisma.platform.findMany({
+        where: {
+          userId,
+          isConnected: true,
+          type: 'FACEBOOK',
+          NOT: {
+            externalId: { startsWith: 'act_fb_' },
+          },
+        },
+        select: { id: true, name: true, type: true, externalId: true },
+      });
+
+      if (platforms.length === 0) {
+        return res.status(200).json({
+          success: true,
+          data: { platforms: 0 },
+          message: 'Nenhuma plataforma conectada',
+        });
+      }
+
+      // Respond immediately, sync in background
+      res.status(200).json({
+        success: true,
+        data: { platforms: platforms.length },
+        message: `Sincronizando ${platforms.length} conta(s) de anúncio... As campanhas aparecerão em alguns segundos.`,
+      });
+
+      // Run sync in background (fire-and-forget)
+      (async () => {
+        let totalCampaigns = 0;
+        let totalMetrics = 0;
+
+        for (const platform of platforms) {
+          try {
+            const result = await platformsService.syncPlatformCampaigns(platform.id);
+            totalCampaigns += result.synced;
+            totalMetrics += result.metricsSynced;
+          } catch (err: any) {
+            logger.warn(`Sync failed for platform ${platform.name}: ${err.message}`);
+          }
+        }
+
+        // Instagram uses the same Facebook API/accounts - no need to sync separately
+        // Instagram campaigns are already included in the Facebook sync
+
+        // Clear campaigns cache after all syncs complete
+        await cache.delPattern(`campaigns:${userId}:*`);
+
+        logger.info(`Sync-all completed for user ${userId}: ${totalCampaigns} campaigns, ${totalMetrics} metrics`);
+      })().catch(err => logger.error('Background sync-all error:', err));
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Sync all platforms error:', error);
       res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }

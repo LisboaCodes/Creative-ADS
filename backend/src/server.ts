@@ -8,6 +8,7 @@ import { redis } from './config/redis';
 import './jobs/sync-campaigns.job';
 import './jobs/check-alerts.job';
 import './jobs/clean-old-metrics.job';
+import './jobs/whatsapp-daily-summary.job';
 
 const app = createApp();
 

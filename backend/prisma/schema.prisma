@@ -34,6 +34,7 @@ enum CampaignStatus {
   PAUSED
   ARCHIVED
   DELETED
+  DRAFT
 }
 
 enum AlertType {
@@ -76,6 +77,7 @@ model User {
   notifications     Notification[]
   automationRules   AutomationRule[]
   auditLogs         AuditLog[]
+  whatsappGroups    WhatsAppGroup[]
 
   @@index([email])
   @@map("users")
@@ -142,9 +144,10 @@ model Campaign {
   id              String         @id @default(cuid())
 
   // Campaign Info
-  externalId      String         // Platform's campaign ID
+  externalId      String?        // Platform's campaign ID (null for drafts)
   name            String
   status          CampaignStatus
+  draftData       Json?          // Stores objective, targeting, creative config before publishing
 
   // Budget
   dailyBudget     Float?
@@ -517,6 +520,32 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ─── WhatsApp Groups (Evolution API integration) ─────────────
+
+model WhatsAppGroup {
+  id          String   @id @default(cuid())
+  groupJid    String   // "120363...@g.us" - WhatsApp group ID
+  groupName   String
+  clientName  String
+  isActive    Boolean  @default(true)
+
+  platformIds String[] // Platform IDs whose campaigns notify this group
+
+  // Notification preferences
+  notifyStatusChange  Boolean @default(true)
+  notifyBudgetChange  Boolean @default(true)
+  notifyPerformance   Boolean @default(true)
+  notifyDailySummary  Boolean @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("whatsapp_groups")
 }
 
 // ─── Campaign Library (Best Practices Knowledge Base) ─────────────

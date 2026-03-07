@@ -27,6 +27,11 @@ router.delete('/logins/:loginId', authenticate, (req, res) =>
   platformsController.disconnectLogin(req, res)
 );
 
+// Sync all connected platforms
+router.post('/sync-all', authenticate, (req, res) =>
+  platformsController.syncAllPlatforms(req, res)
+);
+
 // --- Business Manager ---
 
 // Get BM detail (ad accounts, pages, pixels)

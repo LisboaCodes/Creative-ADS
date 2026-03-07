@@ -1,4 +1,4 @@
-import { CampaignStatus, PlatformType } from '@prisma/client';
+import { CampaignStatus, Prisma, PlatformType } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { cache } from '../../config/redis';
 import { env } from '../../config/env';
@@ -9,7 +9,8 @@ import { facebookService } from '../platforms/integrations/facebook.service';
 import { ClaudeProvider } from '../ai/providers/claude.provider';
 import { OpenAIProvider } from '../ai/providers/openai.provider';
 import type { IAIProvider } from '../ai/providers/base.provider';
-import type { UpdateCampaignStatusInput, UpdateCampaignBudgetInput } from './campaigns.schemas';
+import type { UpdateCampaignStatusInput, UpdateCampaignBudgetInput, ApplyTemplateInput } from './campaigns.schemas';
+import { whatsAppNotificationsService } from '../whatsapp/whatsapp-notifications.service';
 
 export class CampaignsService {
   /**
@@ -129,13 +130,14 @@ export class CampaignsService {
     // Deduplicate campaigns by externalId (same campaign can appear under FACEBOOK and INSTAGRAM)
     const seen = new Map<string, typeof campaignsWithAgg[0]>();
     for (const c of campaignsWithAgg) {
-      const existing = seen.get(c.externalId);
+      const key = c.externalId || c.id; // Drafts have no externalId, use id
+      const existing = seen.get(key);
       if (!existing) {
-        seen.set(c.externalId, c);
+        seen.set(key, c);
       } else {
         // Keep the one with more spend, merge metrics
         if (c.aggregated30d.totalSpend > existing.aggregated30d.totalSpend) {
-          seen.set(c.externalId, c);
+          seen.set(key, c);
         }
       }
     }
@@ -159,8 +161,8 @@ export class CampaignsService {
       filteredCampaigns = dedupedCampaigns.filter((c) => !c.aggregated30d.hasSpend);
     }
 
-    // Sort: ACTIVE first, then by spend desc, then PAUSED, then ARCHIVED/DELETED
-    const statusOrder: Record<string, number> = { ACTIVE: 0, PAUSED: 1, ARCHIVED: 2, DELETED: 3 };
+    // Sort: ACTIVE first, then by spend desc, then PAUSED, then DRAFT, then ARCHIVED/DELETED
+    const statusOrder: Record<string, number> = { ACTIVE: 0, PAUSED: 1, DRAFT: 2, ARCHIVED: 3, DELETED: 4 };
     filteredCampaigns.sort((a, b) => {
       const statusA = statusOrder[a.status] ?? 4;
       const statusB = statusOrder[b.status] ?? 4;
@@ -248,8 +250,8 @@ export class CampaignsService {
       throw new NotFoundError('Campanha não encontrada');
     }
 
-    // Update on platform via platform-agnostic service
-    if (data.status === 'ACTIVE' || data.status === 'PAUSED') {
+    // Update on platform via platform-agnostic service (skip for drafts)
+    if ((data.status === 'ACTIVE' || data.status === 'PAUSED') && campaign.externalId) {
       const accessToken = await platformsService.getAccessToken(campaign.platformId);
       const service = platformsService.getServiceForType(campaign.platformType);
       await service.updateCampaignStatus(accessToken, campaign.externalId, data.status);
@@ -264,6 +266,13 @@ export class CampaignsService {
     // Clear caches
     await cache.delPattern(`campaigns:${userId}:*`);
     this.invalidateAIContextCache(userId);
+
+    // WhatsApp notification (fire-and-forget)
+    whatsAppNotificationsService.notifyGroups(userId, 'STATUS_CHANGE', {
+      campaign: { name: campaign.name, platformId: campaign.platformId, platformType: campaign.platformType },
+      oldStatus: campaign.status,
+      newStatus: data.status,
+    }).catch(err => logger.warn('WhatsApp notification failed', err));
 
     return updated;
   }
@@ -290,6 +299,10 @@ export class CampaignsService {
       throw new NotFoundError('Campanha não encontrada');
     }
 
+    if (!campaign.externalId) {
+      throw new ValidationError('Não é possível atualizar orçamento de rascunho na plataforma');
+    }
+
     // Update on platform via platform-agnostic service
     const accessToken = await platformsService.getAccessToken(campaign.platformId);
     const service = platformsService.getServiceForType(campaign.platformType);
@@ -312,6 +325,13 @@ export class CampaignsService {
     await cache.delPattern(`campaigns:${userId}:*`);
     this.invalidateAIContextCache(userId);
 
+    // WhatsApp notification (fire-and-forget)
+    whatsAppNotificationsService.notifyGroups(userId, 'BUDGET_CHANGE', {
+      campaign: { name: campaign.name, platformId: campaign.platformId, platformType: campaign.platformType },
+      oldBudget: campaign.dailyBudget || 0,
+      newBudget: data.dailyBudget || campaign.dailyBudget || 0,
+    }).catch(err => logger.warn('WhatsApp notification failed', err));
+
     return updated;
   }
 
@@ -331,7 +351,7 @@ export class CampaignsService {
   }
 
   /**
-   * Create a new campaign on a platform
+   * Create a new campaign on a platform (or save as draft)
    */
   async createCampaign(
     userId: string,
@@ -343,6 +363,7 @@ export class CampaignsService {
       lifetimeBudget?: number;
       startDate?: string;
       endDate?: string;
+      saveAsDraft?: boolean;
       targeting?: any;
       creative?: {
         pageId: string;
@@ -367,6 +388,53 @@ export class CampaignsService {
       throw new NotFoundError('Plataforma não encontrada ou não conectada');
     }
 
+    // ─── DRAFT MODE: save locally without calling platform API ───
+    if (data.saveAsDraft) {
+      const dbCampaign = await prisma.$transaction(async (tx) => {
+        const campaign = await tx.campaign.create({
+          data: {
+            platformId: platform.id,
+            externalId: null,
+            name: data.name,
+            status: 'DRAFT',
+            dailyBudget: data.dailyBudget,
+            lifetimeBudget: data.lifetimeBudget,
+            currency: 'BRL',
+            startDate: data.startDate ? new Date(data.startDate) : undefined,
+            endDate: data.endDate ? new Date(data.endDate) : undefined,
+            platformType: platform.type,
+            draftData: {
+              objective: data.objective,
+              targeting: data.targeting,
+              creative: data.creative,
+            },
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            userId,
+            entityType: 'campaign',
+            entityId: campaign.id,
+            action: 'DRAFT_CREATED',
+            newValue: { name: data.name, objective: data.objective },
+            source: 'manual',
+            description: `Rascunho "${data.name}" salvo`,
+          },
+        });
+
+        return campaign;
+      });
+
+      await cache.delPattern(`campaigns:${userId}:*`);
+
+      return {
+        campaign: dbCampaign,
+        externalIds: { campaignId: null, adSetId: undefined, adId: undefined },
+      };
+    }
+
+    // ─── PUBLISH MODE: create on platform ───
     const accessToken = await platformsService.getAccessToken(platformId);
 
     // All steps in a try block - if any external API call fails, we clean up
@@ -465,6 +533,11 @@ export class CampaignsService {
     await cache.delPattern(`campaigns:${userId}:*`);
     this.invalidateAIContextCache(userId);
 
+    // WhatsApp notification (fire-and-forget)
+    whatsAppNotificationsService.notifyGroups(userId, 'CAMPAIGN_CREATED', {
+      campaign: { name: data.name, platformId: platform.id, platformType: platform.type },
+    }).catch(err => logger.warn('WhatsApp notification failed', err));
+
     return {
       campaign: dbCampaign,
       externalIds: {
@@ -472,6 +545,316 @@ export class CampaignsService {
         adSetId,
         adId,
       },
+    };
+  }
+
+  /**
+   * Publish a draft campaign to the platform
+   */
+  async publishDraft(userId: string, campaignId: string) {
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: campaignId, platform: { userId }, status: 'DRAFT' },
+      include: { platform: true },
+    });
+
+    if (!campaign) {
+      throw new NotFoundError('Rascunho não encontrado');
+    }
+
+    const draftData = campaign.draftData as any;
+    if (!draftData) {
+      throw new ValidationError('Dados do rascunho estão vazios');
+    }
+
+    const accessToken = await platformsService.getAccessToken(campaign.platformId);
+    const service = platformsService.getServiceForType(campaign.platformType);
+
+    // Create campaign on platform
+    const campaignResult = await (service as any).createCampaign(
+      accessToken,
+      campaign.platform.externalId,
+      {
+        name: campaign.name,
+        objective: draftData.objective,
+        dailyBudget: campaign.dailyBudget,
+        lifetimeBudget: campaign.lifetimeBudget,
+        status: 'PAUSED',
+      }
+    );
+
+    let adSetId: string | undefined;
+    let adId: string | undefined;
+
+    try {
+      // Create ad set if targeting exists
+      if (draftData.targeting) {
+        const adSetResult = await facebookService.createAdSet(accessToken, {
+          name: `${campaign.name} - Conjunto`,
+          campaignId: campaignResult.id,
+          targeting: draftData.targeting,
+          dailyBudget: campaign.dailyBudget ?? undefined,
+          startTime: campaign.startDate?.toISOString(),
+          endTime: campaign.endDate?.toISOString(),
+        });
+        adSetId = adSetResult.id;
+      }
+
+      // Create creative and ad
+      if (draftData.creative && adSetId) {
+        const creativeResult = await facebookService.createAdCreative(
+          accessToken,
+          campaign.platform!.externalId,
+          {
+            name: `${campaign.name} - Criativo`,
+            pageId: draftData.creative.pageId,
+            message: draftData.creative.message,
+            headline: draftData.creative.headline,
+            description: draftData.creative.description,
+            linkUrl: draftData.creative.linkUrl,
+            callToAction: draftData.creative.callToAction,
+            imageHash: draftData.creative.imageHash,
+          }
+        );
+
+        const adResult = await facebookService.createAd(accessToken, {
+          name: `${campaign.name} - Anúncio`,
+          adSetId,
+          creativeId: creativeResult.id,
+          status: 'PAUSED',
+        });
+        adId = adResult.id;
+      }
+    } catch (error: any) {
+      logger.warn(`Partial draft publish for ${campaignResult.id}: ${error.message}`);
+    }
+
+    // Update campaign in DB
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedCampaign = await tx.campaign.update({
+        where: { id: campaignId },
+        data: {
+          externalId: campaignResult.id,
+          status: 'PAUSED',
+          draftData: Prisma.DbNull, // Clear draft data
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId,
+          entityType: 'campaign',
+          entityId: campaignId,
+          action: 'DRAFT_PUBLISHED',
+          newValue: { externalId: campaignResult.id, adSetId, adId },
+          source: 'manual',
+          description: `Rascunho "${campaign.name}" publicado`,
+        },
+      });
+
+      return updatedCampaign;
+    });
+
+    await cache.delPattern(`campaigns:${userId}:*`);
+    this.invalidateAIContextCache(userId);
+
+    // WhatsApp notification (fire-and-forget)
+    whatsAppNotificationsService.notifyGroups(userId, 'CAMPAIGN_CREATED', {
+      campaign: { name: campaign.name, platformId: campaign.platformId, platformType: campaign.platformType },
+    }).catch(err => logger.warn('WhatsApp notification failed', err));
+
+    return { campaign: updated, externalIds: { campaignId: campaignResult.id, adSetId, adId } };
+  }
+
+  /**
+   * Update a draft campaign
+   */
+  async updateDraft(
+    userId: string,
+    campaignId: string,
+    data: {
+      name?: string;
+      objective?: string;
+      dailyBudget?: number;
+      lifetimeBudget?: number;
+      startDate?: string;
+      endDate?: string;
+      targeting?: any;
+      creative?: any;
+    }
+  ) {
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: campaignId, platform: { userId }, status: 'DRAFT' },
+    });
+
+    if (!campaign) {
+      throw new NotFoundError('Rascunho não encontrado');
+    }
+
+    const currentDraftData = (campaign.draftData as any) || {};
+    const updatedDraftData = {
+      ...currentDraftData,
+      ...(data.objective && { objective: data.objective }),
+      ...(data.targeting && { targeting: data.targeting }),
+      ...(data.creative && { creative: data.creative }),
+    };
+
+    const updated = await prisma.campaign.update({
+      where: { id: campaignId },
+      data: {
+        ...(data.name && { name: data.name }),
+        ...(data.dailyBudget !== undefined && { dailyBudget: data.dailyBudget }),
+        ...(data.lifetimeBudget !== undefined && { lifetimeBudget: data.lifetimeBudget }),
+        ...(data.startDate && { startDate: new Date(data.startDate) }),
+        ...(data.endDate && { endDate: new Date(data.endDate) }),
+        draftData: updatedDraftData,
+      },
+    });
+
+    await cache.delPattern(`campaigns:${userId}:*`);
+
+    return updated;
+  }
+
+  /**
+   * Apply a campaign template - creates full campaign structure on platform
+   */
+  async applyTemplate(userId: string, data: ApplyTemplateInput) {
+    // 1. Fetch template
+    const template = await prisma.campaignTemplate.findUnique({
+      where: { id: data.templateId },
+    });
+    if (!template) {
+      throw new NotFoundError('Template não encontrado');
+    }
+
+    // 2. Verify platform
+    const platform = await prisma.platform.findFirst({
+      where: { id: data.platformId, userId, isConnected: true },
+    });
+    if (!platform) {
+      throw new NotFoundError('Plataforma não encontrada ou não conectada');
+    }
+
+    const accessToken = await platformsService.getAccessToken(data.platformId);
+    const campaignSetup = template.campaignSetup as any;
+
+    // 3. Create campaign on platform
+    const campaignResult = await facebookService.createCampaign(
+      accessToken,
+      platform.externalId,
+      {
+        name: data.campaignName,
+        objective: campaignSetup.optimizationGoal || 'OUTCOME_SALES',
+        dailyBudget: data.budgetType === 'daily' ? data.budget : undefined,
+        lifetimeBudget: data.budgetType === 'lifetime' ? data.budget : undefined,
+        status: 'PAUSED',
+      }
+    );
+
+    let adSetId: string | undefined;
+    let adId: string | undefined;
+
+    try {
+      // 4. Create ad set with targeting
+      const templateTargeting = (template.adSetSetup as any)?.targeting || {};
+      const userTargeting = data.targeting || {};
+
+      const targeting: any = {};
+      if (userTargeting.geoLocations) {
+        targeting.geoLocations = userTargeting.geoLocations;
+      }
+      if (userTargeting.ageMin || templateTargeting.ageMin) {
+        targeting.ageMin = userTargeting.ageMin || templateTargeting.ageMin;
+      }
+      if (userTargeting.ageMax || templateTargeting.ageMax) {
+        targeting.ageMax = userTargeting.ageMax || templateTargeting.ageMax;
+      }
+      if (userTargeting.genders?.length) {
+        targeting.genders = userTargeting.genders;
+      }
+      if (userTargeting.interests?.length) {
+        targeting.interests = userTargeting.interests;
+      }
+
+      const adSetResult = await facebookService.createAdSet(accessToken, {
+        name: `${data.campaignName} - Conjunto`,
+        campaignId: campaignResult.id,
+        targeting,
+        dailyBudget: data.budgetType === 'daily' ? data.budget : undefined,
+      });
+      adSetId = adSetResult.id;
+
+      // 5. Create creative and ad if provided
+      if (data.creative && data.pageId && adSetId) {
+        const creativeResult = await facebookService.createAdCreative(
+          accessToken,
+          platform.externalId,
+          {
+            name: `${data.campaignName} - Criativo`,
+            pageId: data.pageId,
+            message: data.creative.primaryText,
+            headline: data.creative.headline,
+            description: data.creative.description,
+            linkUrl: data.websiteUrl,
+            callToAction: data.creative.cta,
+            imageHash: data.creative.imageHash,
+          }
+        );
+
+        const adResult = await facebookService.createAd(accessToken, {
+          name: `${data.campaignName} - Anúncio`,
+          adSetId,
+          creativeId: creativeResult.id,
+          status: 'PAUSED',
+        });
+        adId = adResult.id;
+      }
+    } catch (error: any) {
+      logger.warn(`Partial template apply for ${campaignResult.id}: ${error.message}`);
+    }
+
+    // 6. Save to DB
+    const dbCampaign = await prisma.$transaction(async (tx) => {
+      const campaign = await tx.campaign.create({
+        data: {
+          platformId: platform.id,
+          externalId: campaignResult.id,
+          name: data.campaignName,
+          status: 'PAUSED',
+          dailyBudget: data.budgetType === 'daily' ? data.budget : undefined,
+          lifetimeBudget: data.budgetType === 'lifetime' ? data.budget : undefined,
+          currency: 'BRL',
+          platformType: platform.type,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId,
+          entityType: 'campaign',
+          entityId: campaign.id,
+          action: 'TEMPLATE_APPLIED',
+          newValue: { templateId: data.templateId, templateName: template.name, adSetId, adId },
+          source: 'manual',
+          description: `Campanha "${data.campaignName}" criada a partir do template "${template.name}"`,
+        },
+      });
+
+      return campaign;
+    });
+
+    await cache.delPattern(`campaigns:${userId}:*`);
+    this.invalidateAIContextCache(userId);
+
+    // WhatsApp notification (fire-and-forget)
+    whatsAppNotificationsService.notifyGroups(userId, 'CAMPAIGN_CREATED', {
+      campaign: { name: data.campaignName, platformId: platform.id, platformType: platform.type },
+    }).catch(err => logger.warn('WhatsApp notification failed', err));
+
+    return {
+      campaign: dbCampaign,
+      externalIds: { campaignId: campaignResult.id, adSetId, adId },
+      template: { id: template.id, name: template.name },
     };
   }
 

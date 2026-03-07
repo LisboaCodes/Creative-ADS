@@ -1,9 +1,13 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Textarea } from '../components/ui/textarea';
 import { Badge } from '../components/ui/badge';
 import {
   Select,
@@ -17,6 +21,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '../components/ui/dialog';
 import {
   Search,
@@ -25,6 +30,7 @@ import {
   TrendingUp,
   Star,
   ChevronRight,
+  ChevronLeft,
   Filter,
   X,
   Lightbulb,
@@ -33,6 +39,9 @@ import {
   BarChart3,
   Copy,
   CheckCircle2,
+  PlayCircle,
+  Loader2,
+  Check,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -63,6 +72,9 @@ const nicheLabels: Record<string, string> = {
   'financas': 'Finanças',
   'moda': 'Moda / Beleza',
   'restaurantes': 'Restaurantes / Food',
+  'agencia': 'Agência de Marketing',
+  'tecnologia': 'Tecnologia',
+  'tatuagem': 'Tatuagem / Body Art',
 };
 
 const objectiveLabels: Record<string, string> = {
@@ -122,7 +134,19 @@ interface CampaignTemplate {
   source?: string;
 }
 
+const CTA_OPTIONS = [
+  { value: 'LEARN_MORE', label: 'Saiba Mais' },
+  { value: 'SHOP_NOW', label: 'Comprar Agora' },
+  { value: 'SIGN_UP', label: 'Cadastre-se' },
+  { value: 'CONTACT_US', label: 'Fale Conosco' },
+  { value: 'SEND_WHATSAPP_MESSAGE', label: 'WhatsApp' },
+  { value: 'GET_OFFER', label: 'Obter Oferta' },
+  { value: 'DOWNLOAD', label: 'Baixar' },
+  { value: 'SUBSCRIBE', label: 'Assinar' },
+];
+
 export default function CampaignLibrary() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [niche, setNiche] = useState('');
   const [platform, setPlatform] = useState('');
@@ -130,6 +154,117 @@ export default function CampaignLibrary() {
   const [category, setCategory] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<CampaignTemplate | null>(null);
   const [detailTab, setDetailTab] = useState<'strategy' | 'structure' | 'creatives' | 'benchmarks' | 'tips'>('strategy');
+
+  // Apply Template Wizard state
+  const [applyWizardOpen, setApplyWizardOpen] = useState(false);
+  const [applyStep, setApplyStep] = useState(0);
+  const [applyData, setApplyData] = useState({
+    platformId: '',
+    campaignName: '',
+    budget: 0,
+    budgetType: 'daily' as 'daily' | 'lifetime',
+    targeting: {
+      geoLocations: { countries: ['BR'] as string[] },
+      ageMin: 18,
+      ageMax: 65,
+      genders: [] as number[],
+    },
+    pageId: '',
+    websiteUrl: '',
+    creative: {
+      headline: '',
+      primaryText: '',
+      description: '',
+      cta: 'LEARN_MORE',
+      imageHash: '',
+    },
+  });
+
+  // Fetch connected platforms for wizard
+  const { data: connectedPlatforms } = useQuery({
+    queryKey: ['platforms'],
+    queryFn: async () => {
+      const response = await api.get('/api/platforms');
+      return response.data.data;
+    },
+  });
+
+  // Fetch pages for selected platform in wizard
+  const { data: wizardPages } = useQuery({
+    queryKey: ['platform-pages', applyData.platformId],
+    queryFn: async () => {
+      const response = await api.get(`/api/platforms/${applyData.platformId}/pages`);
+      return response.data.data;
+    },
+    enabled: !!applyData.platformId && applyWizardOpen,
+  });
+
+  // Apply template mutation
+  const applyMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post('/api/campaigns/apply-template', {
+        templateId: selectedTemplate!.id,
+        platformId: applyData.platformId,
+        campaignName: applyData.campaignName,
+        budget: applyData.budget,
+        budgetType: applyData.budgetType,
+        targeting: applyData.targeting,
+        pageId: applyData.pageId || undefined,
+        websiteUrl: applyData.websiteUrl || undefined,
+        creative: applyData.creative.headline ? applyData.creative : undefined,
+      });
+      return response.data.data;
+    },
+    onSuccess: () => {
+      toast.success('Campanha criada com sucesso a partir do template!');
+      setApplyWizardOpen(false);
+      setSelectedTemplate(null);
+      navigate('/campaigns');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error || 'Falha ao aplicar template');
+    },
+  });
+
+  const openApplyWizard = () => {
+    if (!selectedTemplate) return;
+    const setup = selectedTemplate.campaignSetup as any;
+    setApplyData({
+      platformId: '',
+      campaignName: selectedTemplate.name,
+      budget: setup?.budgetRange?.recommended || 100,
+      budgetType: setup?.budgetType || 'daily',
+      targeting: {
+        geoLocations: { countries: ['BR'] },
+        ageMin: (selectedTemplate.adSetSetup as any)?.targeting?.ageMin || 18,
+        ageMax: (selectedTemplate.adSetSetup as any)?.targeting?.ageMax || 65,
+        genders: [],
+      },
+      pageId: '',
+      websiteUrl: '',
+      creative: {
+        headline: (selectedTemplate.creativeSetup as any)?.copyTemplates?.[0]?.headline || '',
+        primaryText: (selectedTemplate.creativeSetup as any)?.copyTemplates?.[0]?.primaryText || '',
+        description: (selectedTemplate.creativeSetup as any)?.copyTemplates?.[0]?.description || '',
+        cta: (selectedTemplate.creativeSetup as any)?.copyTemplates?.[0]?.cta || 'LEARN_MORE',
+        imageHash: '',
+      },
+    });
+    setApplyStep(0);
+    setApplyWizardOpen(true);
+  };
+
+  const applySteps = ['Conta', 'Orçamento', 'Segmentação', 'Criativo', 'Confirmar'];
+  const canProceedApply = () => {
+    switch (applyStep) {
+      case 0: return !!applyData.platformId && !!applyData.campaignName;
+      case 1: return applyData.budget > 0;
+      case 2: return true;
+      case 3: return true;
+      case 4: return true;
+      default: return false;
+    }
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ['campaign-library', search, niche, platform, objective, category],
@@ -380,6 +515,390 @@ export default function CampaignLibrary() {
         </>
       )}
 
+      {/* Apply Template Wizard */}
+      <Dialog open={applyWizardOpen} onOpenChange={setApplyWizardOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Aplicar Template: {selectedTemplate?.name}</DialogTitle>
+            {/* Step indicator */}
+            <div className="flex items-center gap-2 mt-3">
+              {applySteps.map((stepLabel, i) => (
+                <div key={i} className="flex items-center gap-1">
+                  <div className={cn(
+                    'w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium',
+                    i < applyStep ? 'bg-primary text-primary-foreground' :
+                    i === applyStep ? 'bg-primary text-primary-foreground' :
+                    'bg-muted text-muted-foreground'
+                  )}>
+                    {i < applyStep ? <Check className="h-3 w-3" /> : i + 1}
+                  </div>
+                  <span className={cn('text-xs hidden sm:inline', i === applyStep ? 'font-medium' : 'text-muted-foreground')}>
+                    {stepLabel}
+                  </span>
+                  {i < applySteps.length - 1 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+                </div>
+              ))}
+            </div>
+          </DialogHeader>
+
+          <div className="mt-4 space-y-4">
+            {/* Step 0: Platform & Name */}
+            {applyStep === 0 && (
+              <div className="space-y-4">
+                <div>
+                  <Label>Conta de Anúncios</Label>
+                  <Select
+                    value={applyData.platformId}
+                    onValueChange={(v) => setApplyData({ ...applyData, platformId: v })}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Selecione uma conta" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {connectedPlatforms?.filter((p: any) => p.isConnected).map((p: any) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name} ({p.type})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Nome da Campanha</Label>
+                  <Input
+                    value={applyData.campaignName}
+                    onChange={(e) => setApplyData({ ...applyData, campaignName: e.target.value })}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Step 1: Budget */}
+            {applyStep === 1 && (
+              <div className="space-y-4">
+                <div>
+                  <Label>Tipo de Orçamento</Label>
+                  <Select
+                    value={applyData.budgetType}
+                    onValueChange={(v) => setApplyData({ ...applyData, budgetType: v as any })}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="daily">Diário</SelectItem>
+                      <SelectItem value="lifetime">Vitalício</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Valor do Orçamento (R$)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="1"
+                    value={applyData.budget || ''}
+                    onChange={(e) => setApplyData({ ...applyData, budget: Number(e.target.value) })}
+                    className="mt-1"
+                  />
+                  {(selectedTemplate?.campaignSetup as any)?.budgetRange && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Sugerido: R${(selectedTemplate?.campaignSetup as any).budgetRange.recommended}/
+                      {applyData.budgetType === 'daily' ? 'dia' : 'total'}
+                      {' '}(min R${(selectedTemplate?.campaignSetup as any).budgetRange.min} - max R${(selectedTemplate?.campaignSetup as any).budgetRange.max})
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Targeting */}
+            {applyStep === 2 && (
+              <div className="space-y-4">
+                {(selectedTemplate?.adSetSetup as any)?.targeting?.type === 'BROAD' && (
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-sm">
+                    Este template usa segmentação <strong>BROAD</strong> (aberta). O algoritmo da plataforma encontrará o melhor público automaticamente. Apenas defina a localização geográfica.
+                  </div>
+                )}
+                <div>
+                  <Label>País</Label>
+                  <Select
+                    value={applyData.targeting.geoLocations.countries[0] || 'BR'}
+                    onValueChange={(v) => setApplyData({
+                      ...applyData,
+                      targeting: { ...applyData.targeting, geoLocations: { countries: [v] } },
+                    })}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="BR">Brasil</SelectItem>
+                      <SelectItem value="PT">Portugal</SelectItem>
+                      <SelectItem value="US">Estados Unidos</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Idade Mínima</Label>
+                    <Input
+                      type="number"
+                      min="13"
+                      max="65"
+                      value={applyData.targeting.ageMin}
+                      onChange={(e) => setApplyData({
+                        ...applyData,
+                        targeting: { ...applyData.targeting, ageMin: Number(e.target.value) },
+                      })}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label>Idade Máxima</Label>
+                    <Input
+                      type="number"
+                      min="13"
+                      max="65"
+                      value={applyData.targeting.ageMax}
+                      onChange={(e) => setApplyData({
+                        ...applyData,
+                        targeting: { ...applyData.targeting, ageMax: Number(e.target.value) },
+                      })}
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label>Gênero</Label>
+                  <Select
+                    value={applyData.targeting.genders.length === 0 ? 'all' : String(applyData.targeting.genders[0])}
+                    onValueChange={(v) => setApplyData({
+                      ...applyData,
+                      targeting: {
+                        ...applyData.targeting,
+                        genders: v === 'all' ? [] : [Number(v)],
+                      },
+                    })}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="1">Masculino</SelectItem>
+                      <SelectItem value="2">Feminino</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Creative */}
+            {applyStep === 3 && (
+              <div className="space-y-4">
+                {/* Copy templates as suggestions */}
+                {(selectedTemplate?.creativeSetup as any)?.copyTemplates && (
+                  <div>
+                    <p className="text-sm font-medium mb-2">Sugestões do template (clique para usar):</p>
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {(selectedTemplate?.creativeSetup as any).copyTemplates.map((copy: any, i: number) => (
+                        <button
+                          key={i}
+                          className="w-full text-left bg-muted/50 rounded-lg p-2 text-xs hover:bg-muted transition-colors"
+                          onClick={() => setApplyData({
+                            ...applyData,
+                            creative: {
+                              ...applyData.creative,
+                              headline: copy.headline || applyData.creative.headline,
+                              primaryText: copy.primaryText || applyData.creative.primaryText,
+                              description: copy.description || applyData.creative.description,
+                              cta: copy.cta || applyData.creative.cta,
+                            },
+                          })}
+                        >
+                          {copy.headline && <p className="font-semibold">{copy.headline}</p>}
+                          {copy.primaryText && <p className="text-muted-foreground">{copy.primaryText}</p>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <Label>Página / Page ID</Label>
+                  {wizardPages && wizardPages.length > 0 ? (
+                    <Select
+                      value={applyData.pageId}
+                      onValueChange={(v) => setApplyData({ ...applyData, pageId: v })}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="Selecione uma página" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {wizardPages.map((p: any) => (
+                          <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      value={applyData.pageId}
+                      onChange={(e) => setApplyData({ ...applyData, pageId: e.target.value })}
+                      placeholder="ID da página do Facebook"
+                      className="mt-1"
+                    />
+                  )}
+                </div>
+                <div>
+                  <Label>Título (Headline)</Label>
+                  <Input
+                    value={applyData.creative.headline}
+                    onChange={(e) => setApplyData({
+                      ...applyData,
+                      creative: { ...applyData.creative, headline: e.target.value },
+                    })}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>Texto Principal</Label>
+                  <Textarea
+                    value={applyData.creative.primaryText}
+                    onChange={(e) => setApplyData({
+                      ...applyData,
+                      creative: { ...applyData.creative, primaryText: e.target.value },
+                    })}
+                    rows={3}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>Descrição</Label>
+                  <Input
+                    value={applyData.creative.description}
+                    onChange={(e) => setApplyData({
+                      ...applyData,
+                      creative: { ...applyData.creative, description: e.target.value },
+                    })}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>URL de Destino</Label>
+                  <Input
+                    value={applyData.websiteUrl}
+                    onChange={(e) => setApplyData({ ...applyData, websiteUrl: e.target.value })}
+                    placeholder="https://seusite.com.br"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>Botão de Ação (CTA)</Label>
+                  <Select
+                    value={applyData.creative.cta}
+                    onValueChange={(v) => setApplyData({
+                      ...applyData,
+                      creative: { ...applyData.creative, cta: v },
+                    })}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CTA_OPTIONS.map((cta) => (
+                        <SelectItem key={cta.value} value={cta.value}>{cta.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  A imagem pode ser adicionada depois diretamente no Gerenciador de Anúncios.
+                </p>
+              </div>
+            )}
+
+            {/* Step 4: Confirm */}
+            {applyStep === 4 && (
+              <div className="space-y-4">
+                <h3 className="font-semibold">Resumo da Campanha</h3>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Template</p>
+                    <p className="font-medium">{selectedTemplate?.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Conta</p>
+                    <p className="font-medium">
+                      {connectedPlatforms?.find((p: any) => p.id === applyData.platformId)?.name || applyData.platformId}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Nome</p>
+                    <p className="font-medium">{applyData.campaignName}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Orçamento</p>
+                    <p className="font-medium">
+                      R${applyData.budget.toFixed(2)}/{applyData.budgetType === 'daily' ? 'dia' : 'total'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">País</p>
+                    <p className="font-medium">{applyData.targeting.geoLocations.countries.join(', ')}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Idade</p>
+                    <p className="font-medium">{applyData.targeting.ageMin}-{applyData.targeting.ageMax} anos</p>
+                  </div>
+                  {applyData.creative.headline && (
+                    <div className="col-span-2">
+                      <p className="text-muted-foreground">Criativo</p>
+                      <p className="font-medium">{applyData.creative.headline}</p>
+                      {applyData.creative.primaryText && (
+                        <p className="text-xs text-muted-foreground">{applyData.creative.primaryText}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 text-sm">
+                  A campanha será criada com status <strong>PAUSADA</strong> na plataforma.
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="mt-4 flex justify-between">
+            <Button
+              variant="outline"
+              onClick={() => applyStep > 0 ? setApplyStep(applyStep - 1) : setApplyWizardOpen(false)}
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              {applyStep > 0 ? 'Voltar' : 'Cancelar'}
+            </Button>
+            {applyStep < applySteps.length - 1 ? (
+              <Button onClick={() => setApplyStep(applyStep + 1)} disabled={!canProceedApply()}>
+                Próximo
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            ) : (
+              <Button
+                onClick={() => applyMutation.mutate()}
+                disabled={applyMutation.isPending}
+              >
+                {applyMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <PlayCircle className="h-4 w-4 mr-2" />
+                )}
+                Criar na Plataforma
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Detail Modal */}
       <Dialog open={!!selectedTemplate} onOpenChange={(open) => !open && setSelectedTemplate(null)}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -405,11 +924,19 @@ export default function CampaignLibrary() {
                     </Badge>
                   )}
                 </div>
-                <DialogTitle className="text-xl">{detail.name}</DialogTitle>
-                <p className="text-muted-foreground text-sm mt-1">{detail.description}</p>
-                {detail.source && (
-                  <p className="text-xs text-muted-foreground mt-1">Fonte: {detail.source} ({detail.year})</p>
-                )}
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <DialogTitle className="text-xl">{detail.name}</DialogTitle>
+                    <p className="text-muted-foreground text-sm mt-1">{detail.description}</p>
+                    {detail.source && (
+                      <p className="text-xs text-muted-foreground mt-1">Fonte: {detail.source} ({detail.year})</p>
+                    )}
+                  </div>
+                  <Button onClick={openApplyWizard} className="flex-shrink-0">
+                    <PlayCircle className="h-4 w-4 mr-2" />
+                    Aplicar Campanha
+                  </Button>
+                </div>
               </DialogHeader>
 
               {/* Tabs */}

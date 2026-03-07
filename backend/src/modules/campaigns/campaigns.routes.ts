@@ -9,6 +9,11 @@ router.post('/', authenticate, (req, res) =>
   campaignsController.createCampaign(req, res)
 );
 
+// Apply template (before :id routes)
+router.post('/apply-template', authenticate, (req, res) =>
+  campaignsController.applyTemplate(req, res)
+);
+
 // Upload ad image
 router.post('/upload-image', authenticate, (req, res) =>
   campaignsController.uploadImage(req, res)
@@ -42,6 +47,13 @@ router.get('/audit-log', authenticate, (req, res) => campaignsController.getAudi
 router.get('/:id', authenticate, (req, res) =>
   campaignsController.getCampaignById(req, res)
 );
+
+// Draft operations
+router.post('/:id/publish', authenticate, (req, res) => campaignsController.publishDraft(req, res));
+router.put('/:id/draft', authenticate, (req, res) => campaignsController.updateDraft(req, res));
+
+// Send client update via WhatsApp
+router.post('/:id/send-client-update', authenticate, (req, res) => campaignsController.sendClientUpdate(req, res));
 
 // Tags
 router.post('/:id/tags', authenticate, (req, res) => campaignsController.addTag(req, res));

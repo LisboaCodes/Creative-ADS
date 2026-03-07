@@ -15,6 +15,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  FileEdit,
+  Send,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState } from 'react';
@@ -47,6 +50,7 @@ const statusTabs = [
   { value: 'ACTIVE_SPEND', label: 'Ativas', statusParam: 'ACTIVE', spendParam: 'true' },
   { value: 'ACTIVE_NO_SPEND', label: 'Sem veiculação', statusParam: 'ACTIVE', spendParam: 'false' },
   { value: 'PAUSED', label: 'Pausadas', statusParam: 'PAUSED', spendParam: undefined },
+  { value: 'DRAFT', label: 'Rascunhos', statusParam: 'DRAFT', spendParam: undefined },
   { value: 'ARCHIVED', label: 'Arquivadas', statusParam: 'ARCHIVED', spendParam: undefined },
 ];
 
@@ -55,6 +59,7 @@ const statusLabels: Record<string, string> = {
   PAUSED: 'Pausada',
   ARCHIVED: 'Arquivada',
   DELETED: 'Excluída',
+  DRAFT: 'Rascunho',
 };
 
 function calculateHealthScore(agg: any): { score: number; level: string; color: string } {
@@ -124,6 +129,10 @@ export default function Campaigns() {
   const [platformFilter, setPlatformFilter] = useState('all');
   const [activeTab, setActiveTab] = useState('ACTIVE_SPEND');
   const [clientFilter, setClientFilter] = useState('all');
+
+  // Publishing draft state
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   // Budget dialog state
   const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
@@ -248,6 +257,44 @@ export default function Campaigns() {
     navigate(`/campaigns/new?duplicate=${campaignId}`);
   };
 
+  const handleSyncAll = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.post('/api/platforms/sync-all');
+      toast.success(res.data.message || 'Sincronização iniciada');
+      // Refresh data after a delay to allow background sync to complete
+      setTimeout(() => refetch(), 5000);
+      setTimeout(() => refetch(), 15000);
+      setTimeout(() => { refetch(); setSyncing(false); }, 30000);
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Falha ao sincronizar');
+      setSyncing(false);
+    }
+  };
+
+  const handlePublishDraft = async (campaignId: string) => {
+    setPublishingId(campaignId);
+    try {
+      await api.post(`/api/campaigns/${campaignId}/publish`);
+      toast.success('Rascunho publicado com sucesso! Status: PAUSADA');
+      refetch();
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Falha ao publicar rascunho');
+    } finally {
+      setPublishingId(null);
+    }
+  };
+
+  const handleDeleteDraft = async (campaignId: string) => {
+    try {
+      await api.patch(`/api/campaigns/${campaignId}/status`, { status: 'DELETED' });
+      toast.success('Rascunho excluído');
+      refetch();
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Falha ao excluir rascunho');
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -285,9 +332,18 @@ export default function Campaigns() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => refetch()} variant="outline" size="default">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Atualizar
+          <Button
+            onClick={handleSyncAll}
+            variant="outline"
+            size="default"
+            disabled={syncing}
+          >
+            {syncing ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            {syncing ? 'Sincronizando...' : 'Sincronizar'}
           </Button>
           <Button onClick={() => navigate('/campaigns/new')} size="default">
             <Edit className="h-4 w-4 mr-2" />
@@ -461,7 +517,9 @@ export default function Campaigns() {
                                 </span>
                               </div>
                               <span className="text-xs text-muted-foreground">
-                                ID: {campaign.externalId?.slice(0, 12)}...
+                                {campaign.externalId
+                                  ? `ID: ${campaign.externalId.slice(0, 12)}...`
+                                  : campaign.status === 'DRAFT' ? 'Rascunho local' : ''}
                               </span>
                               {campaign.tags && campaign.tags.length > 0 && (
                                 <div className="flex flex-wrap gap-1 mt-1">
@@ -488,7 +546,13 @@ export default function Campaigns() {
                         </td>
                         <td className="py-4 px-4">
                           <div className="flex flex-col gap-1">
-                            <Badge variant={campaign.status === 'ACTIVE' ? 'success' : campaign.status === 'PAUSED' ? 'secondary' : 'destructive'}>
+                            <Badge variant={
+                              campaign.status === 'ACTIVE' ? 'success' :
+                              campaign.status === 'PAUSED' ? 'secondary' :
+                              campaign.status === 'DRAFT' ? 'outline' :
+                              'destructive'
+                            } className={campaign.status === 'DRAFT' ? 'text-gray-500 border-gray-300' : ''}>
+                              {campaign.status === 'DRAFT' && <FileEdit className="h-3 w-3 mr-1" />}
                               {statusLabels[campaign.status] || campaign.status}
                             </Badge>
                             {campaign.status === 'ACTIVE' && !agg?.hasSpend && (
@@ -531,49 +595,91 @@ export default function Campaigns() {
                         </td>
                         <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-center gap-2">
-                            <Button
-                              size="sm"
-                              variant={campaign.status === 'ACTIVE' ? 'outline' : 'default'}
-                              onClick={() => handleToggleStatus(campaign.id, campaign.status)}
-                            >
-                              {campaign.status === 'ACTIVE' ? (
-                                <Pause className="h-4 w-4" />
-                              ) : (
-                                <Play className="h-4 w-4" />
-                              )}
-                            </Button>
-
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => handleOpenBudgetDialog(campaign)}>
-                                  <Edit className="h-4 w-4 mr-2" />
-                                  Editar Orçamento
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleViewAnalytics(campaign.id)}>
-                                  <TrendingUp className="h-4 w-4 mr-2" />
-                                  Ver Análises
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleDuplicateCampaign(campaign.id)}>
-                                  <Copy className="h-4 w-4 mr-2" />
-                                  Duplicar
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-destructive"
-                                  onClick={() => handleToggleStatus(campaign.id, 'ACTIVE')}
+                            {campaign.status === 'DRAFT' ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  onClick={() => handlePublishDraft(campaign.id)}
+                                  disabled={publishingId === campaign.id}
                                 >
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Arquivar
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                                  {publishingId === campaign.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Send className="h-4 w-4" />
+                                  )}
+                                  <span className="ml-1 hidden sm:inline">Publicar</span>
+                                </Button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm">
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onClick={() => handleViewAnalytics(campaign.id)}>
+                                      <Edit className="h-4 w-4 mr-2" />
+                                      Editar Rascunho
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="text-destructive"
+                                      onClick={() => handleDeleteDraft(campaign.id)}
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Excluir
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </>
+                            ) : (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant={campaign.status === 'ACTIVE' ? 'outline' : 'default'}
+                                  onClick={() => handleToggleStatus(campaign.id, campaign.status)}
+                                >
+                                  {campaign.status === 'ACTIVE' ? (
+                                    <Pause className="h-4 w-4" />
+                                  ) : (
+                                    <Play className="h-4 w-4" />
+                                  )}
+                                </Button>
+
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm">
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onClick={() => handleOpenBudgetDialog(campaign)}>
+                                      <Edit className="h-4 w-4 mr-2" />
+                                      Editar Orçamento
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleViewAnalytics(campaign.id)}>
+                                      <TrendingUp className="h-4 w-4 mr-2" />
+                                      Ver Análises
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleDuplicateCampaign(campaign.id)}>
+                                      <Copy className="h-4 w-4 mr-2" />
+                                      Duplicar
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="text-destructive"
+                                      onClick={() => handleToggleStatus(campaign.id, 'ACTIVE')}
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Arquivar
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>

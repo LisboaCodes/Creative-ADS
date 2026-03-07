@@ -77,6 +77,11 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   AI_DEFAULT_PROVIDER: z.enum(['CLAUDE', 'OPENAI']).default('CLAUDE'),
 
+  // Evolution API (WhatsApp)
+  EVOLUTION_API_URL: z.string().url().optional(),
+  EVOLUTION_API_KEY: z.string().optional(),
+  EVOLUTION_INSTANCE: z.string().optional(),
+
   // Rate Limiting
   RATE_LIMIT_WINDOW_MS: z.string().transform(Number).default('60000'),
   RATE_LIMIT_MAX_REQUESTS: z.string().transform(Number).default('100'),

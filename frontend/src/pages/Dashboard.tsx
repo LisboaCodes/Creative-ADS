@@ -316,7 +316,7 @@ export default function Dashboard() {
     };
     return nameMap[p.platformType] || p.platformType;
   }) || [];
-  const platformSpendData = platformData?.map((p: any) => Number(p.spend.toFixed(2))) || [];
+  const platformSpendData = platformData?.map((p: any) => Number((p.spend ?? 0).toFixed(2))) || [];
   const platformColors: Record<string, string> = {
     FACEBOOK: '#1877F2',
     INSTAGRAM: '#E4405F',
@@ -683,7 +683,7 @@ export default function Dashboard() {
                       <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-muted-foreground">ROAS</span>
-                          <Badge variant="success">{(forecast as ForecastData).projectedROAS?.toFixed(2)}x</Badge>
+                          <Badge variant="success">{((forecast as ForecastData).projectedROAS ?? 0).toFixed(2)}x</Badge>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-muted-foreground">CPC</span>

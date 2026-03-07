@@ -18,6 +18,7 @@ import {
   X,
   Upload,
   FileImage,
+  FileEdit,
   MessageSquare,
   MapPin,
 } from 'lucide-react';
@@ -177,32 +178,38 @@ export default function CreateCampaign() {
     enabled: !!interestSearch && interestSearch.length >= 2 && !!formData.platformId,
   });
 
+  // Build campaign payload
+  const buildPayload = (saveAsDraft = false) => {
+    const payload: any = {
+      platformId: formData.platformId,
+      name: formData.name,
+      objective: formData.objective,
+      targeting: formData.targeting,
+      saveAsDraft,
+    };
+
+    if (formData.budgetType === 'daily' && formData.dailyBudget) {
+      payload.dailyBudget = formData.dailyBudget;
+    }
+    if (formData.budgetType === 'lifetime' && formData.lifetimeBudget) {
+      payload.lifetimeBudget = formData.lifetimeBudget;
+    }
+    if (formData.startDate) payload.startDate = formData.startDate;
+    if (formData.endDate) payload.endDate = formData.endDate;
+
+    if (formData.creative.pageId) {
+      payload.creative = { ...formData.creative };
+      if (!payload.creative.imageHash) delete payload.creative.imageHash;
+      if (!payload.creative.postId) delete payload.creative.postId;
+    }
+
+    return payload;
+  };
+
   // Create campaign mutation
   const createMutation = useMutation({
     mutationFn: async () => {
-      const payload: any = {
-        platformId: formData.platformId,
-        name: formData.name,
-        objective: formData.objective,
-        targeting: formData.targeting,
-      };
-
-      if (formData.budgetType === 'daily' && formData.dailyBudget) {
-        payload.dailyBudget = formData.dailyBudget;
-      }
-      if (formData.budgetType === 'lifetime' && formData.lifetimeBudget) {
-        payload.lifetimeBudget = formData.lifetimeBudget;
-      }
-      if (formData.startDate) payload.startDate = formData.startDate;
-      if (formData.endDate) payload.endDate = formData.endDate;
-
-      if (formData.creative.pageId) {
-        payload.creative = { ...formData.creative };
-        if (!payload.creative.imageHash) delete payload.creative.imageHash;
-        if (!payload.creative.postId) delete payload.creative.postId;
-      }
-
-      const response = await api.post('/api/campaigns', payload);
+      const response = await api.post('/api/campaigns', buildPayload(false));
       return response.data.data;
     },
     onSuccess: (data) => {
@@ -211,6 +218,21 @@ export default function CreateCampaign() {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.error || 'Falha ao criar campanha');
+    },
+  });
+
+  // Save as draft mutation
+  const draftMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post('/api/campaigns', buildPayload(true));
+      return response.data.data;
+    },
+    onSuccess: () => {
+      toast.success('Rascunho salvo com sucesso!');
+      navigate('/campaigns');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error || 'Falha ao salvar rascunho');
     },
   });
 
@@ -1209,9 +1231,9 @@ export default function CreateCampaign() {
                 </div>
               </div>
 
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm">
-                A campanha será criada com status <strong>PAUSADA</strong>. Você poderá ativá-la
-                diretamente na página de detalhes da campanha.
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 text-sm">
+                Ao publicar, a campanha será criada com status <strong>PAUSADA</strong> na plataforma.
+                Ou salve como rascunho para publicar depois.
               </div>
             </div>
           )}
@@ -1234,17 +1256,31 @@ export default function CreateCampaign() {
             <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
         ) : (
-          <Button
-            onClick={() => createMutation.mutate()}
-            disabled={createMutation.isPending}
-          >
-            {createMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            ) : (
-              <Check className="h-4 w-4 mr-2" />
-            )}
-            Criar Campanha
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => draftMutation.mutate()}
+              disabled={draftMutation.isPending || createMutation.isPending}
+            >
+              {draftMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <FileEdit className="h-4 w-4 mr-2" />
+              )}
+              Salvar Rascunho
+            </Button>
+            <Button
+              onClick={() => createMutation.mutate()}
+              disabled={createMutation.isPending || draftMutation.isPending}
+            >
+              {createMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Check className="h-4 w-4 mr-2" />
+              )}
+              Publicar Agora
+            </Button>
+          </div>
         )}
       </div>
     </div>

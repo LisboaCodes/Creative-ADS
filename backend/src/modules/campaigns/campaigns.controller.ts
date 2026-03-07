@@ -4,6 +4,7 @@ import { ZodError } from 'zod';
 import { campaignsService } from './campaigns.service';
 import { logger } from '../../utils/logger';
 import { AppError } from '../../utils/errors';
+import { whatsAppNotificationsService } from '../whatsapp/whatsapp-notifications.service';
 import type { AuthRequest } from '../auth/auth.middleware';
 import {
   campaignFiltersSchema,
@@ -12,6 +13,8 @@ import {
   bulkActionSchema,
   createCampaignSchema,
   aiSuggestSchema,
+  applyTemplateSchema,
+  updateDraftSchema,
 } from './campaigns.schemas';
 
 const upload = multer({
@@ -406,6 +409,113 @@ export class CampaignsController {
       }
       logger.error('Bulk action error:', error);
       res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
+   * POST /api/campaigns/:id/publish
+   */
+  async publishDraft(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const result = await campaignsService.publishDraft(req.user.userId, req.params.id);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Publish draft error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
+   * PUT /api/campaigns/:id/draft
+   */
+  async updateDraft(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const data = updateDraftSchema.parse(req.body);
+      const result = await campaignsService.updateDraft(req.user.userId, req.params.id, data);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Update draft error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
+   * POST /api/campaigns/apply-template
+   */
+  async applyTemplate(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const data = applyTemplateSchema.parse(req.body);
+      const result = await campaignsService.applyTemplate(req.user.userId, data);
+
+      res.status(201).json({
+        success: true,
+        data: result,
+      });
+    } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Apply template error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+  /**
+   * POST /api/campaigns/:id/send-client-update
+   */
+  async sendClientUpdate(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const result = await whatsAppNotificationsService.sendCampaignUpdate(
+        req.user.userId,
+        req.params.id
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: `Atualização enviada para ${result.sent} grupo(s)`,
+      });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Send client update error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erro ao enviar atualização' });
     }
   }
 }

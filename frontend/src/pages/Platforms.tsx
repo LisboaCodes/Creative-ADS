@@ -104,12 +104,15 @@ export default function Platforms() {
   const queryClient = useQueryClient();
 
   // Fetch platform logins (with hierarchy)
-  const { data: logins, isLoading: loginsLoading } = useQuery<PlatformLogin[]>({
+  const { data: logins, isLoading: loginsLoading, error: loginsError } = useQuery<PlatformLogin[]>({
     queryKey: ['platformLogins'],
     queryFn: async () => {
       const response = await api.get('/api/platforms/logins');
+      console.log('[Platforms] logins response:', response.data);
       return response.data.data;
     },
+    refetchOnMount: 'always',
+    retry: 2,
   });
 
   // Also fetch all platforms for connected status
@@ -218,6 +221,9 @@ export default function Platforms() {
     acc[key].push(login);
     return acc;
   }, {});
+
+  // Debug: log state
+  console.log('[Platforms] logins:', logins?.length, 'loading:', loginsLoading, 'error:', loginsError?.message);
 
   if (loginsLoading) {
     return (
