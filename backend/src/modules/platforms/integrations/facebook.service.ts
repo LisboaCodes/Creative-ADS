@@ -4,10 +4,13 @@ import { env } from '../../../config/env';
 import { logger } from '../../../utils/logger';
 import {
   BasePlatformService,
+  loggedRequest,
   type OAuthTokens,
   type CampaignData,
   type MetricData,
   type AdCreativeData,
+  type AdSetData,
+  type AdData,
   type AdAccountData,
   type CreateCampaignInput,
   type CreateAdSetInput,
@@ -248,11 +251,15 @@ export class FacebookService extends BasePlatformService {
           'start_time',
           'stop_time',
         ].join(','),
+        filtering: JSON.stringify([{ field: 'effective_status', operator: 'NOT_IN', value: ['DELETED'] }]),
         limit: 100,
       };
 
       while (url) {
-        const response: { data: any } = await axios.get(url, { params });
+        const response: { data: any } = await loggedRequest(
+          { method: 'GET', url, params },
+          { platformType: PlatformType.FACEBOOK }
+        );
 
         const campaigns: CampaignData[] = response.data.data.map((campaign: any) => ({
           externalId: campaign.id,
@@ -292,25 +299,30 @@ export class FacebookService extends BasePlatformService {
     endDate: Date
   ): Promise<MetricData[]> {
     try {
-      const response = await axios.get(`${FACEBOOK_GRAPH_API}/${campaignExternalId}/insights`, {
-        params: {
-          access_token: accessToken,
-          fields: [
-            'impressions',
-            'reach',
-            'clicks',
-            'spend',
-            'actions',
-            'action_values',
-          ].join(','),
-          time_range: JSON.stringify({
-            since: startDate.toISOString().split('T')[0],
-            until: endDate.toISOString().split('T')[0],
-          }),
-          time_increment: 1, // Daily breakdown
-          level: 'campaign',
+      const response = await loggedRequest(
+        {
+          method: 'GET',
+          url: `${FACEBOOK_GRAPH_API}/${campaignExternalId}/insights`,
+          params: {
+            access_token: accessToken,
+            fields: [
+              'impressions',
+              'reach',
+              'clicks',
+              'spend',
+              'actions',
+              'action_values',
+            ].join(','),
+            time_range: JSON.stringify({
+              since: startDate.toISOString().split('T')[0],
+              until: endDate.toISOString().split('T')[0],
+            }),
+            time_increment: 1, // Daily breakdown
+            level: 'campaign',
+          },
         },
-      });
+        { platformType: PlatformType.FACEBOOK }
+      );
 
       if (!response.data.data) {
         return [];
@@ -410,16 +422,14 @@ export class FacebookService extends BasePlatformService {
     status: 'ACTIVE' | 'PAUSED'
   ): Promise<void> {
     try {
-      await axios.post(
-        `${FACEBOOK_GRAPH_API}/${campaignExternalId}`,
+      await loggedRequest(
         {
-          status: status === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
+          method: 'POST',
+          url: `${FACEBOOK_GRAPH_API}/${campaignExternalId}`,
+          data: { status: status === 'ACTIVE' ? 'ACTIVE' : 'PAUSED' },
+          params: { access_token: accessToken },
         },
-        {
-          params: {
-            access_token: accessToken,
-          },
-        }
+        { platformType: PlatformType.FACEBOOK }
       );
 
       logger.info(`Facebook campaign ${campaignExternalId} status updated to ${status}`);
@@ -448,11 +458,15 @@ export class FacebookService extends BasePlatformService {
         updateData.lifetime_budget = Math.round(budget.lifetime * 100);
       }
 
-      await axios.post(`${FACEBOOK_GRAPH_API}/${campaignExternalId}`, updateData, {
-        params: {
-          access_token: accessToken,
+      await loggedRequest(
+        {
+          method: 'POST',
+          url: `${FACEBOOK_GRAPH_API}/${campaignExternalId}`,
+          data: updateData,
+          params: { access_token: accessToken },
         },
-      });
+        { platformType: PlatformType.FACEBOOK }
+      );
 
       logger.info(`Facebook campaign ${campaignExternalId} budget updated`);
     } catch (error: any) {
@@ -464,15 +478,25 @@ export class FacebookService extends BasePlatformService {
   /**
    * Create a new campaign on Facebook
    */
+  // Fallback: ODAX objectives → legacy objectives for older ad accounts
+  private readonly odaxToLegacy: Record<string, string> = {
+    OUTCOME_AWARENESS: 'BRAND_AWARENESS',
+    OUTCOME_TRAFFIC: 'LINK_CLICKS',
+    OUTCOME_ENGAGEMENT: 'POST_ENGAGEMENT',
+    OUTCOME_LEADS: 'LEAD_GENERATION',
+    OUTCOME_SALES: 'CONVERSIONS',
+    OUTCOME_APP_PROMOTION: 'APP_INSTALLS',
+  };
+
   async createCampaign(
     accessToken: string,
     accountId: string,
     data: CreateCampaignInput
   ): Promise<{ id: string }> {
-    try {
+    const buildPayload = (objective: string) => {
       const payload: any = {
         name: data.name,
-        objective: data.objective,
+        objective,
         status: data.status || 'PAUSED',
         special_ad_categories: data.specialAdCategories || [],
       };
@@ -483,7 +507,12 @@ export class FacebookService extends BasePlatformService {
       if (data.lifetimeBudget) {
         payload.lifetime_budget = Math.round(data.lifetimeBudget * 100);
       }
+      return payload;
+    };
 
+    try {
+      // Try with original objective first (ODAX format)
+      const payload = buildPayload(data.objective);
       const response = await axios.post(
         `${FACEBOOK_GRAPH_API}/${accountId}/campaigns`,
         payload,
@@ -493,8 +522,31 @@ export class FacebookService extends BasePlatformService {
       logger.info(`Created Facebook campaign: ${response.data.id}`);
       return { id: response.data.id };
     } catch (error: any) {
-      logger.error('Facebook create campaign error:', error.response?.data || error.message);
-      throw new Error(error.response?.data?.error?.message || 'Failed to create Facebook campaign');
+      const fbError = error.response?.data?.error;
+
+      // If objective is invalid and we have a legacy fallback, retry
+      if (fbError?.code === 100 && fbError?.message?.includes('Objective is invalid') && this.odaxToLegacy[data.objective]) {
+        const legacyObjective = this.odaxToLegacy[data.objective];
+        logger.info(`Retrying with legacy objective: ${data.objective} → ${legacyObjective}`);
+
+        try {
+          const payload = buildPayload(legacyObjective);
+          const response = await axios.post(
+            `${FACEBOOK_GRAPH_API}/${accountId}/campaigns`,
+            payload,
+            { params: { access_token: accessToken } }
+          );
+
+          logger.info(`Created Facebook campaign with legacy objective: ${response.data.id}`);
+          return { id: response.data.id };
+        } catch (retryError: any) {
+          logger.error('Facebook create campaign retry error:', retryError.response?.data || retryError.message);
+          throw new Error(retryError.response?.data?.error?.message || 'Failed to create Facebook campaign');
+        }
+      }
+
+      logger.error('Facebook create campaign error:', fbError || error.message);
+      throw new Error(fbError?.message || 'Failed to create Facebook campaign');
     }
   }
 
@@ -1005,13 +1057,104 @@ export class FacebookService extends BasePlatformService {
   }
 
   /**
+   * Get ad sets for a campaign
+   */
+  async getAdSets(accessToken: string, campaignExternalId: string): Promise<AdSetData[]> {
+    try {
+      const allAdSets: AdSetData[] = [];
+      let url: string | null = `${FACEBOOK_GRAPH_API}/${campaignExternalId}/adsets`;
+      let params: any = {
+        access_token: accessToken,
+        fields: [
+          'id', 'name', 'status', 'effective_status',
+          'daily_budget', 'lifetime_budget', 'targeting',
+          'optimization_goal', 'billing_event',
+          'start_time', 'end_time',
+        ].join(','),
+        filtering: JSON.stringify([{ field: 'effective_status', operator: 'NOT_IN', value: ['DELETED'] }]),
+        limit: 100,
+      };
+
+      while (url) {
+        const response: { data: any } = await axios.get(url, { params });
+
+        if (response.data.data) {
+          for (const adSet of response.data.data) {
+            allAdSets.push({
+              externalId: adSet.id,
+              name: adSet.name,
+              status: this.mapFacebookStatus(adSet.effective_status),
+              dailyBudget: adSet.daily_budget ? Number(adSet.daily_budget) / 100 : undefined,
+              lifetimeBudget: adSet.lifetime_budget ? Number(adSet.lifetime_budget) / 100 : undefined,
+              targeting: adSet.targeting || undefined,
+              optimizationGoal: adSet.optimization_goal || undefined,
+              billingEvent: adSet.billing_event || undefined,
+              startDate: adSet.start_time ? new Date(adSet.start_time) : undefined,
+              endDate: adSet.end_time ? new Date(adSet.end_time) : undefined,
+            });
+          }
+        }
+
+        url = response.data.paging?.next || null;
+        params = {};
+      }
+
+      logger.info(`Fetched ${allAdSets.length} ad sets for campaign ${campaignExternalId}`);
+      return allAdSets;
+    } catch (error: any) {
+      logger.error('Facebook get ad sets error:', error.response?.data || error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Get ads for an ad set
+   */
+  async getAds(accessToken: string, adSetExternalId: string): Promise<AdData[]> {
+    try {
+      const allAds: AdData[] = [];
+      let url: string | null = `${FACEBOOK_GRAPH_API}/${adSetExternalId}/ads`;
+      let params: any = {
+        access_token: accessToken,
+        fields: 'id,name,status,effective_status,creative{id}',
+        filtering: JSON.stringify([{ field: 'effective_status', operator: 'NOT_IN', value: ['DELETED'] }]),
+        limit: 100,
+      };
+
+      while (url) {
+        const response: { data: any } = await axios.get(url, { params });
+
+        if (response.data.data) {
+          for (const ad of response.data.data) {
+            allAds.push({
+              externalId: ad.id,
+              name: ad.name,
+              status: this.mapFacebookStatus(ad.effective_status),
+              creativeExternalId: ad.creative?.id || undefined,
+            });
+          }
+        }
+
+        url = response.data.paging?.next || null;
+        params = {};
+      }
+
+      logger.info(`Fetched ${allAds.length} ads for ad set ${adSetExternalId}`);
+      return allAds;
+    } catch (error: any) {
+      logger.error('Facebook get ads error:', error.response?.data || error.message);
+      return [];
+    }
+  }
+
+  /**
    * Helper: Map Facebook status to our status
    */
-  private mapFacebookStatus(fbStatus: string): 'ACTIVE' | 'PAUSED' | 'ARCHIVED' {
-    const statusMap: Record<string, 'ACTIVE' | 'PAUSED' | 'ARCHIVED'> = {
+  private mapFacebookStatus(fbStatus: string): 'ACTIVE' | 'PAUSED' | 'ARCHIVED' | 'DELETED' {
+    const statusMap: Record<string, 'ACTIVE' | 'PAUSED' | 'ARCHIVED' | 'DELETED'> = {
       ACTIVE: 'ACTIVE',
       PAUSED: 'PAUSED',
-      DELETED: 'ARCHIVED',
+      DELETED: 'DELETED',
       ARCHIVED: 'ARCHIVED',
       PENDING_REVIEW: 'PAUSED',
       DISAPPROVED: 'PAUSED',

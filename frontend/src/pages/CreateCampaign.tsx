@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import api from '../services/api';
@@ -21,6 +21,7 @@ import {
   FileEdit,
   MessageSquare,
   MapPin,
+  Link2,
 } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -31,7 +32,10 @@ import { Textarea } from '../components/ui/textarea';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
@@ -120,6 +124,30 @@ export default function CreateCampaign() {
   const [aiInterestSuggestions, setAiInterestSuggestions] = useState<string[]>([]);
   const [aiBudgetSuggestion, setAiBudgetSuggestion] = useState<{ dailyBudget?: number; justification?: string } | null>(null);
   const [aiCopySuggestion, setAiCopySuggestion] = useState<{ message?: string; headline?: string; description?: string } | null>(null);
+
+  // UTM Builder state
+  const [showUtm, setShowUtm] = useState(false);
+  const [utm, setUtm] = useState({
+    source: '',
+    medium: '',
+    campaign: '',
+    content: '',
+    term: '',
+  });
+
+  // Track unsaved form changes
+  const [isDirty, setIsDirty] = useState(false);
+
+  // Warn before navigating away with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
 
   // Fetch platforms
   const { data: platforms } = useQuery({
@@ -213,6 +241,7 @@ export default function CreateCampaign() {
       return response.data.data;
     },
     onSuccess: (data) => {
+      setIsDirty(false);
       toast.success('Campanha criada com sucesso! Status: PAUSADA');
       navigate(`/campaigns/${data.campaign.id}`);
     },
@@ -228,6 +257,7 @@ export default function CreateCampaign() {
       return response.data.data;
     },
     onSuccess: () => {
+      setIsDirty(false);
       toast.success('Rascunho salvo com sucesso!');
       navigate('/campaigns');
     },
@@ -406,24 +436,75 @@ export default function CreateCampaign() {
 
       {/* Step Content */}
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="pt-6" onChangeCapture={() => setIsDirty(true)}>
           {/* Step 0: Platform & Name */}
-          {step === 0 && (
+          {step === 0 && (() => {
+            // Group platforms by Business Manager
+            const connected = platforms?.filter((p: any) => p.isConnected) || [];
+            const bmGroups = new Map<string, { bmName: string; platforms: any[] }>();
+            const ungrouped: any[] = [];
+
+            for (const p of connected) {
+              if (p.businessManagerId && p.businessManagerName) {
+                const existing = bmGroups.get(p.businessManagerId);
+                if (existing) {
+                  existing.platforms.push(p);
+                } else {
+                  bmGroups.set(p.businessManagerId, { bmName: p.businessManagerName, platforms: [p] });
+                }
+              } else {
+                ungrouped.push(p);
+              }
+            }
+
+            return (
             <div className="space-y-4">
               <div>
-                <Label>Conta / Plataforma</Label>
+                <Label>Business Manager / Conta de Anúncios</Label>
                 <Select value={formData.platformId} onValueChange={(v) => updateForm('platformId', v)}>
                   <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Selecione uma conta" />
+                    <SelectValue placeholder="Selecione uma conta de anúncios" />
                   </SelectTrigger>
                   <SelectContent>
-                    {platforms?.filter((p: any) => p.isConnected).map((p: any) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name} ({p.type})
-                      </SelectItem>
+                    {Array.from(bmGroups.entries()).map(([bmId, group], idx) => (
+                      <SelectGroup key={bmId}>
+                        {idx > 0 && <SelectSeparator />}
+                        <SelectLabel className="text-xs uppercase tracking-wider text-muted-foreground">
+                          {group.bmName}
+                        </SelectLabel>
+                        {group.platforms.map((p: any) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            <span className="flex items-center gap-2">
+                              <span>{p.name}</span>
+                              <span className="text-xs text-muted-foreground">({p.type})</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     ))}
+                    {ungrouped.length > 0 && (
+                      <SelectGroup>
+                        {bmGroups.size > 0 && <SelectSeparator />}
+                        <SelectLabel className="text-xs uppercase tracking-wider text-muted-foreground">
+                          Contas Avulsas
+                        </SelectLabel>
+                        {ungrouped.map((p: any) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            <span className="flex items-center gap-2">
+                              <span>{p.name}</span>
+                              <span className="text-xs text-muted-foreground">({p.type})</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
                   </SelectContent>
                 </Select>
+                {selectedPlatform?.businessManagerName && (
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    BM: {selectedPlatform.businessManagerName} — ID: {selectedPlatform.externalId}
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Nome da Campanha</Label>
@@ -467,7 +548,8 @@ export default function CreateCampaign() {
                 </div>
               )}
             </div>
-          )}
+            );
+          })()}
 
           {/* Step 1: Objective */}
           {step === 1 && (
@@ -1026,6 +1108,127 @@ export default function CreateCampaign() {
                       placeholder="https://seusite.com.br/landing"
                       className="mt-1"
                     />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="mt-1 text-xs"
+                      onClick={() => {
+                        if (!showUtm) {
+                          // Auto-generate UTM values
+                          const selectedPlatform = platforms?.find((p: any) => p.id === formData.platformId);
+                          const platformName = (selectedPlatform?.type || 'facebook').toLowerCase();
+                          const campaignSlug = formData.name
+                            ? formData.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+                            : '';
+                          setUtm(prev => ({
+                            source: prev.source || platformName,
+                            medium: prev.medium || 'cpc',
+                            campaign: prev.campaign || campaignSlug,
+                            content: prev.content || '',
+                            term: prev.term || '',
+                          }));
+                        }
+                        setShowUtm(!showUtm);
+                      }}
+                    >
+                      <Link2 className="h-3 w-3 mr-1" />
+                      {showUtm ? 'Ocultar UTM Builder' : 'Adicionar UTMs'}
+                    </Button>
+
+                    {showUtm && (
+                      <div className="mt-2 p-3 border rounded-lg bg-muted/30 space-y-3">
+                        <p className="text-xs font-medium text-muted-foreground">Parâmetros UTM</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs">utm_source</Label>
+                            <Input
+                              value={utm.source}
+                              onChange={(e) => setUtm(prev => ({ ...prev, source: e.target.value }))}
+                              placeholder="facebook"
+                              className="mt-0.5 h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">utm_medium</Label>
+                            <Input
+                              value={utm.medium}
+                              onChange={(e) => setUtm(prev => ({ ...prev, medium: e.target.value }))}
+                              placeholder="cpc"
+                              className="mt-0.5 h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">utm_campaign</Label>
+                            <Input
+                              value={utm.campaign}
+                              onChange={(e) => setUtm(prev => ({ ...prev, campaign: e.target.value }))}
+                              placeholder="nome_campanha"
+                              className="mt-0.5 h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">utm_content</Label>
+                            <Input
+                              value={utm.content}
+                              onChange={(e) => setUtm(prev => ({ ...prev, content: e.target.value }))}
+                              placeholder="banner_a"
+                              className="mt-0.5 h-8 text-sm"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <Label className="text-xs">utm_term</Label>
+                            <Input
+                              value={utm.term}
+                              onChange={(e) => setUtm(prev => ({ ...prev, term: e.target.value }))}
+                              placeholder="palavra_chave"
+                              className="mt-0.5 h-8 text-sm"
+                            />
+                          </div>
+                        </div>
+
+                        {formData.creative.linkUrl && utm.source && (
+                          <div className="mt-2">
+                            <Label className="text-xs text-muted-foreground">URL Final:</Label>
+                            <div className="mt-1 p-2 bg-background rounded border text-xs break-all font-mono">
+                              {(() => {
+                                try {
+                                  const url = new URL(formData.creative.linkUrl);
+                                  if (utm.source) url.searchParams.set('utm_source', utm.source);
+                                  if (utm.medium) url.searchParams.set('utm_medium', utm.medium);
+                                  if (utm.campaign) url.searchParams.set('utm_campaign', utm.campaign);
+                                  if (utm.content) url.searchParams.set('utm_content', utm.content);
+                                  if (utm.term) url.searchParams.set('utm_term', utm.term);
+                                  return url.toString();
+                                } catch {
+                                  return formData.creative.linkUrl;
+                                }
+                              })()}
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="mt-2 text-xs"
+                              onClick={() => {
+                                try {
+                                  const url = new URL(formData.creative.linkUrl);
+                                  if (utm.source) url.searchParams.set('utm_source', utm.source);
+                                  if (utm.medium) url.searchParams.set('utm_medium', utm.medium);
+                                  if (utm.campaign) url.searchParams.set('utm_campaign', utm.campaign);
+                                  if (utm.content) url.searchParams.set('utm_content', utm.content);
+                                  if (utm.term) url.searchParams.set('utm_term', utm.term);
+                                  updateCreative('linkUrl', url.toString());
+                                  setShowUtm(false);
+                                } catch {}
+                              }}
+                            >
+                              Aplicar UTMs na URL
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div>

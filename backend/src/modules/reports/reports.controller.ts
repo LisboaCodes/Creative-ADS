@@ -128,6 +128,29 @@ export class ReportsController {
       res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }
+
+  /**
+   * GET /api/reports/:id/csv - Download report as CSV
+   */
+  async getCsv(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const csv = await reportsService.generateCsv(req.params.id, req.user.userId);
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="relatorio-${req.params.id}.csv"`);
+      res.send(csv);
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Get report CSV error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
 }
 
 export const reportsController = new ReportsController();

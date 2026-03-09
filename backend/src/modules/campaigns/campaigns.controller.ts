@@ -59,6 +59,63 @@ export class CampaignsController {
   }
 
   /**
+   * GET /api/campaigns/adsets
+   */
+  async getAdSets(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const { campaignId, status, search, page, limit } = req.query as any;
+      const result = await campaignsService.getAdSets(req.user.userId, {
+        campaignId,
+        status,
+        search,
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+      });
+
+      res.status(200).json({ success: true, data: result });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Get ad sets error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
+   * GET /api/campaigns/ads
+   */
+  async getAds(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const { adSetId, campaignId, status, search, page, limit } = req.query as any;
+      const result = await campaignsService.getAds(req.user.userId, {
+        adSetId,
+        campaignId,
+        status,
+        search,
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+      });
+
+      res.status(200).json({ success: true, data: result });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Get ads error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
    * GET /api/campaigns/:id
    */
   async getCampaignById(req: AuthRequest, res: Response) {
@@ -516,6 +573,35 @@ export class CampaignsController {
       }
       logger.error('Send client update error:', error);
       res.status(500).json({ success: false, error: error.message || 'Erro ao enviar atualização' });
+    }
+  }
+  /**
+   * POST /api/campaigns/:id/duplicate - Duplicate campaign to another BM/platform
+   */
+  async duplicateCampaign(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const { targetPlatformId } = req.body;
+      if (!targetPlatformId) {
+        return res.status(422).json({ success: false, error: 'targetPlatformId é obrigatório' });
+      }
+
+      const duplicate = await campaignsService.duplicateCampaign(
+        req.params.id,
+        req.user.userId,
+        targetPlatformId
+      );
+
+      res.status(201).json({ success: true, data: duplicate });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Duplicate campaign error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erro ao duplicar campanha' });
     }
   }
 }

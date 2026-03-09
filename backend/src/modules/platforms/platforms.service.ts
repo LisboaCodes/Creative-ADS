@@ -512,6 +512,15 @@ export class PlatformsService {
       }).then((cs) => cs.map((c) => c.id));
 
       if (campaignIds.length > 0) {
+        // Delete ads → ad sets → creatives → metrics → tags → campaigns (respect FK order)
+        const adSetIds = await prisma.adSet.findMany({
+          where: { campaignId: { in: campaignIds } },
+          select: { id: true },
+        }).then((sets) => sets.map((s) => s.id));
+        if (adSetIds.length > 0) {
+          await prisma.ad.deleteMany({ where: { adSetId: { in: adSetIds } } });
+          await prisma.adSet.deleteMany({ where: { id: { in: adSetIds } } });
+        }
         await prisma.adCreative.deleteMany({ where: { campaignId: { in: campaignIds } } });
         await prisma.metric.deleteMany({ where: { campaignId: { in: campaignIds } } });
         await prisma.campaignTag.deleteMany({ where: { campaignId: { in: campaignIds } } });
@@ -554,6 +563,14 @@ export class PlatformsService {
     }).then((cs) => cs.map((c) => c.id));
 
     if (campaignIds.length > 0) {
+      const adSetIds = await prisma.adSet.findMany({
+        where: { campaignId: { in: campaignIds } },
+        select: { id: true },
+      }).then((sets) => sets.map((s) => s.id));
+      if (adSetIds.length > 0) {
+        await prisma.ad.deleteMany({ where: { adSetId: { in: adSetIds } } });
+        await prisma.adSet.deleteMany({ where: { id: { in: adSetIds } } });
+      }
       await prisma.adCreative.deleteMany({ where: { campaignId: { in: campaignIds } } });
       await prisma.metric.deleteMany({ where: { campaignId: { in: campaignIds } } });
       await prisma.campaignTag.deleteMany({ where: { campaignId: { in: campaignIds } } });
@@ -754,8 +771,25 @@ export class PlatformsService {
     // Get campaigns from platform
     const campaigns = await service.getCampaigns(accessToken, platform.externalId);
 
-    // Upsert campaigns in database
+    // Find campaigns that the user has locally DELETED — never overwrite them
+    const locallyDeletedCampaigns = await prisma.campaign.findMany({
+      where: {
+        platformId: platform.id,
+        status: 'DELETED',
+        externalId: { not: null },
+      },
+      select: { externalId: true },
+    });
+    const locallyDeletedIds = new Set(locallyDeletedCampaigns.map((c) => c.externalId!));
+
+    // Upsert campaigns in database (skip locally deleted)
     for (const campaignData of campaigns) {
+      // If user deleted this campaign locally, don't re-insert it
+      if (locallyDeletedIds.has(campaignData.externalId)) {
+        logger.info(`Skipping sync for locally deleted campaign ${campaignData.externalId}`);
+        continue;
+      }
+
       await prisma.campaign.upsert({
         where: {
           platformId_externalId: {
@@ -786,13 +820,39 @@ export class PlatformsService {
       });
     }
 
+    // Archive campaigns that no longer exist on the platform
+    const syncedExternalIds = new Set(campaigns.map((c) => c.externalId));
+    const existingCampaigns = await prisma.campaign.findMany({
+      where: {
+        platformId: platform.id,
+        externalId: { not: null },
+        status: { notIn: ['ARCHIVED', 'DELETED', 'DRAFT'] },
+      },
+      select: { id: true, externalId: true, name: true, status: true },
+    });
+
+    let archivedCount = 0;
+    for (const existing of existingCampaigns) {
+      if (existing.externalId && !syncedExternalIds.has(existing.externalId)) {
+        await prisma.campaign.update({
+          where: { id: existing.id },
+          data: { status: 'ARCHIVED' },
+        });
+        archivedCount++;
+        logger.info(`Archived campaign "${existing.name}" (${existing.externalId}) - no longer on platform`);
+      }
+    }
+
     // Sync metrics for each campaign using real campaign dates
     let metricsSynced = 0;
     let creativesSynced = 0;
 
-    // Get all campaigns for this platform to sync metrics & creatives
+    // Get all campaigns for this platform to sync metrics & creatives (only active ones)
     const dbCampaigns = await prisma.campaign.findMany({
-      where: { platformId: platform.id },
+      where: {
+        platformId: platform.id,
+        status: { notIn: ['ARCHIVED', 'DELETED'] },
+      },
     });
 
     const now = new Date();
@@ -907,6 +967,127 @@ export class PlatformsService {
       }
     }
 
+    // Sync Ad Sets and Ads (if service supports it)
+    let adSetsSynced = 0;
+    let adsSynced = 0;
+
+    if (typeof (service as any).getAdSets === 'function') {
+      for (const campaign of dbCampaigns) {
+        if (!campaign.externalId) continue;
+
+        try {
+          const adSetsData = await (service as any).getAdSets(accessToken, campaign.externalId);
+
+          const syncedAdSetIds = new Set<string>();
+          for (const adSetData of adSetsData) {
+            const adSet = await prisma.adSet.upsert({
+              where: {
+                campaignId_externalId: {
+                  campaignId: campaign.id,
+                  externalId: adSetData.externalId,
+                },
+              },
+              create: {
+                campaignId: campaign.id,
+                externalId: adSetData.externalId,
+                name: adSetData.name,
+                status: adSetData.status,
+                dailyBudget: adSetData.dailyBudget,
+                lifetimeBudget: adSetData.lifetimeBudget,
+                targeting: adSetData.targeting,
+                optimizationGoal: adSetData.optimizationGoal,
+                billingEvent: adSetData.billingEvent,
+                startDate: adSetData.startDate,
+                endDate: adSetData.endDate,
+              },
+              update: {
+                name: adSetData.name,
+                status: adSetData.status,
+                dailyBudget: adSetData.dailyBudget,
+                lifetimeBudget: adSetData.lifetimeBudget,
+                targeting: adSetData.targeting,
+                optimizationGoal: adSetData.optimizationGoal,
+                billingEvent: adSetData.billingEvent,
+                startDate: adSetData.startDate,
+                endDate: adSetData.endDate,
+              },
+            });
+            syncedAdSetIds.add(adSet.externalId);
+            adSetsSynced++;
+
+            // Sync ads for this ad set
+            if (typeof (service as any).getAds === 'function') {
+              try {
+                const adsData = await (service as any).getAds(accessToken, adSetData.externalId);
+                const syncedAdIds = new Set<string>();
+
+                for (const adData of adsData) {
+                  // Try to link to existing creative by externalId
+                  let creativeId: string | null = null;
+                  if (adData.creativeExternalId) {
+                    const creative = await prisma.adCreative.findFirst({
+                      where: { campaignId: campaign.id, externalId: adData.creativeExternalId },
+                      select: { id: true },
+                    });
+                    creativeId = creative?.id || null;
+                  }
+
+                  await prisma.ad.upsert({
+                    where: {
+                      adSetId_externalId: {
+                        adSetId: adSet.id,
+                        externalId: adData.externalId,
+                      },
+                    },
+                    create: {
+                      adSetId: adSet.id,
+                      externalId: adData.externalId,
+                      name: adData.name,
+                      status: adData.status,
+                      creativeId,
+                    },
+                    update: {
+                      name: adData.name,
+                      status: adData.status,
+                      creativeId,
+                    },
+                  });
+                  syncedAdIds.add(adData.externalId);
+                  adsSynced++;
+                }
+
+                // Archive ads no longer on platform
+                const existingAds = await prisma.ad.findMany({
+                  where: { adSetId: adSet.id, status: { notIn: ['ARCHIVED', 'DELETED'] } },
+                  select: { id: true, externalId: true },
+                });
+                for (const existingAd of existingAds) {
+                  if (!syncedAdIds.has(existingAd.externalId)) {
+                    await prisma.ad.update({ where: { id: existingAd.id }, data: { status: 'ARCHIVED' } });
+                  }
+                }
+              } catch (err: any) {
+                logger.warn(`Failed to sync ads for ad set ${adSetData.externalId}: ${err.message}`);
+              }
+            }
+          }
+
+          // Archive ad sets no longer on platform
+          const existingAdSets = await prisma.adSet.findMany({
+            where: { campaignId: campaign.id, status: { notIn: ['ARCHIVED', 'DELETED'] } },
+            select: { id: true, externalId: true },
+          });
+          for (const existingAdSet of existingAdSets) {
+            if (!syncedAdSetIds.has(existingAdSet.externalId)) {
+              await prisma.adSet.update({ where: { id: existingAdSet.id }, data: { status: 'ARCHIVED' } });
+            }
+          }
+        } catch (err: any) {
+          logger.warn(`Failed to sync ad sets for campaign ${campaign.externalId}: ${err.message}`);
+        }
+      }
+    }
+
     // Update last sync time
     await prisma.platform.update({
       where: { id: platformId },
@@ -914,10 +1095,10 @@ export class PlatformsService {
     });
 
     logger.info(
-      `Synced ${campaigns.length} campaigns, ${metricsSynced} metrics, ${creativesSynced} creatives for platform ${platformId}`
+      `Synced ${campaigns.length} campaigns, ${metricsSynced} metrics, ${creativesSynced} creatives, ${adSetsSynced} ad sets, ${adsSynced} ads, ${archivedCount} archived for platform ${platformId}`
     );
 
-    return { synced: campaigns.length, metricsSynced, creativesSynced };
+    return { synced: campaigns.length, metricsSynced, creativesSynced, adSetsSynced, adsSynced, archivedCount };
   }
 }
 

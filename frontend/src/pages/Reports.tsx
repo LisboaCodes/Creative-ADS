@@ -11,6 +11,8 @@ import {
   XCircle,
   Clock,
   Trash2,
+  Download,
+  Printer,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -144,6 +146,36 @@ export default function Reports() {
     }
   };
 
+  const handlePrintPdf = async (reportId: string) => {
+    try {
+      const res = await api.get(`/api/reports/${reportId}/html`, { responseType: 'text' });
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(res.data);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => printWindow.print(), 500);
+      }
+    } catch {
+      toast.error('Falha ao gerar PDF');
+    }
+  };
+
+  const handleDownloadCsv = async (reportId: string) => {
+    try {
+      const res = await api.get(`/api/reports/${reportId}/csv`, { responseType: 'text' });
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `relatorio-${reportId}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Falha ao baixar CSV');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -217,14 +249,34 @@ export default function Reports() {
                         <td className="py-2 px-3 text-right">
                           <div className="flex items-center justify-end gap-2">
                             {report.status === 'COMPLETED' && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleViewHtml(report.id)}
-                              >
-                                <ExternalLink className="h-3 w-3 mr-1" />
-                                Ver HTML
-                              </Button>
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleViewHtml(report.id)}
+                                >
+                                  <ExternalLink className="h-3 w-3 mr-1" />
+                                  HTML
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handlePrintPdf(report.id)}
+                                  title="Imprimir / Salvar como PDF"
+                                >
+                                  <Printer className="h-3 w-3 mr-1" />
+                                  PDF
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDownloadCsv(report.id)}
+                                  title="Baixar CSV"
+                                >
+                                  <Download className="h-3 w-3 mr-1" />
+                                  CSV
+                                </Button>
+                              </>
                             )}
                             <Button
                               variant="ghost"

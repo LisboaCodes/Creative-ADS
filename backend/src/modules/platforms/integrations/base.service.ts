@@ -1,4 +1,7 @@
 import { PlatformType } from '@prisma/client';
+import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
+import { prisma } from '../../../config/database';
+import { logger } from '../../../utils/logger';
 
 export interface PlatformConfig {
   clientId: string;
@@ -15,7 +18,7 @@ export interface OAuthTokens {
 export interface CampaignData {
   externalId: string;
   name: string;
-  status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
+  status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED' | 'DELETED';
   dailyBudget?: number;
   lifetimeBudget?: number;
   currency: string;
@@ -41,6 +44,26 @@ export interface AdCreativeData {
   imageUrl?: string;
   body?: string;
   title?: string;
+}
+
+export interface AdSetData {
+  externalId: string;
+  name: string;
+  status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED' | 'DELETED';
+  dailyBudget?: number;
+  lifetimeBudget?: number;
+  targeting?: any;
+  optimizationGoal?: string;
+  billingEvent?: string;
+  startDate?: Date;
+  endDate?: Date;
+}
+
+export interface AdData {
+  externalId: string;
+  name: string;
+  status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED' | 'DELETED';
+  creativeExternalId?: string;
 }
 
 export interface AdAccountData {
@@ -196,6 +219,22 @@ export interface IPlatformService {
     accessToken: string,
     query: string
   ): Promise<Array<{ id: string; name: string; type: string; audienceSize?: number }>>;
+
+  /**
+   * Get ad sets for a campaign
+   */
+  getAdSets?(
+    accessToken: string,
+    campaignExternalId: string
+  ): Promise<AdSetData[]>;
+
+  /**
+   * Get ads for an ad set
+   */
+  getAds?(
+    accessToken: string,
+    adSetExternalId: string
+  ): Promise<AdData[]>;
 }
 
 /**
@@ -251,5 +290,54 @@ export abstract class BasePlatformService implements IPlatformService {
       conversionRate: Number(conversionRate.toFixed(2)),
       roas: Number(roas.toFixed(2)),
     };
+  }
+}
+
+/**
+ * Wrapper for axios requests that logs to the ApiLog table.
+ * Fire-and-forget — does not block the caller.
+ */
+export async function loggedRequest<T = any>(
+  config: AxiosRequestConfig,
+  context: {
+    userId?: string;
+    platformType?: PlatformType;
+    platformId?: string;
+  } = {}
+): Promise<AxiosResponse<T>> {
+  const start = Date.now();
+  let response: AxiosResponse<T> | undefined;
+  let error: any;
+
+  try {
+    response = await axios(config);
+    return response!;
+  } catch (err: any) {
+    error = err;
+    throw err;
+  } finally {
+    const duration = Date.now() - start;
+    // Truncate bodies to avoid storing huge payloads
+    const truncate = (obj: any) => {
+      if (!obj) return null;
+      const str = typeof obj === 'string' ? obj : JSON.stringify(obj);
+      if (str.length > 5000) return str.slice(0, 5000) + '...(truncated)';
+      try { return JSON.parse(str); } catch { return str; }
+    };
+
+    prisma.apiLog.create({
+      data: {
+        method: (config.method || 'GET').toUpperCase(),
+        url: config.url || '',
+        requestBody: truncate(config.data),
+        responseStatus: response?.status || error?.response?.status || null,
+        responseBody: truncate(response?.data || error?.response?.data),
+        duration,
+        error: error ? (error.message || String(error)).slice(0, 500) : null,
+        platformType: context.platformType || null,
+        platformId: context.platformId || null,
+        userId: context.userId || 'system',
+      },
+    }).catch((logErr: any) => logger.warn('Failed to save API log', logErr));
   }
 }

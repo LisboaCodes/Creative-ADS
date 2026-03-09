@@ -22,6 +22,8 @@ import reportsRoutes from './modules/reports/reports.routes';
 import automationRoutes from './modules/automation/automation.routes';
 import campaignLibraryRoutes from './modules/campaign-library/campaign-library.routes';
 import whatsappRoutes from './modules/whatsapp/whatsapp.routes';
+import clientsRoutes from './modules/clients/clients.routes';
+import apiLogsRoutes from './modules/api-logs/api-logs.routes';
 
 // Swagger configuration
 const swaggerOptions = {
@@ -89,6 +91,8 @@ export function createApp(): Application {
   app.use('/api/automation', automationRoutes);
   app.use('/api/campaign-library', campaignLibraryRoutes);
   app.use('/api/whatsapp', whatsappRoutes);
+  app.use('/api/clients', clientsRoutes);
+  app.use('/api/api-logs', apiLogsRoutes);
 
   // Swagger documentation
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));

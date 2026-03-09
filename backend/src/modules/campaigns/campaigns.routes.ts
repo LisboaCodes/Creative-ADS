@@ -29,6 +29,16 @@ router.get('/targeting/search', authenticate, (req, res) =>
   campaignsController.searchTargeting(req, res)
 );
 
+// Ad Sets listing
+router.get('/adsets', authenticate, (req, res) =>
+  campaignsController.getAdSets(req, res)
+);
+
+// Ads listing
+router.get('/ads', authenticate, (req, res) =>
+  campaignsController.getAds(req, res)
+);
+
 // Get all campaigns
 router.get('/', authenticate, (req, res) =>
   campaignsController.getCampaigns(req, res)
@@ -42,6 +52,16 @@ router.get('/insights', authenticate, (req, res) => campaignsController.getProac
 
 // Audit log
 router.get('/audit-log', authenticate, (req, res) => campaignsController.getAuditLog(req, res));
+
+// Bulk action (must be before /:id routes)
+router.post('/bulk-action', authenticate, (req, res) =>
+  campaignsController.bulkAction(req, res)
+);
+
+// Duplicate campaign to another platform/BM (before /:id routes)
+router.post('/:id/duplicate', authenticate, (req, res) =>
+  campaignsController.duplicateCampaign(req, res)
+);
 
 // Get campaign by ID
 router.get('/:id', authenticate, (req, res) =>
@@ -67,11 +87,6 @@ router.patch('/:id/status', authenticate, (req, res) =>
 // Update campaign budget
 router.patch('/:id/budget', authenticate, (req, res) =>
   campaignsController.updateBudget(req, res)
-);
-
-// Bulk action
-router.post('/bulk-action', authenticate, (req, res) =>
-  campaignsController.bulkAction(req, res)
 );
 
 export default router;

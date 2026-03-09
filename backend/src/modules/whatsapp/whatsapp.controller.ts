@@ -16,7 +16,22 @@ export class WhatsAppController {
         orderBy: { createdAt: 'desc' },
       });
 
-      res.json({ success: true, data: groups });
+      // Resolve platform names for each group
+      const allPlatformIds = [...new Set(groups.flatMap((g) => g.platformIds))];
+      const platforms = allPlatformIds.length > 0
+        ? await prisma.platform.findMany({
+            where: { id: { in: allPlatformIds } },
+            select: { id: true, name: true, type: true },
+          })
+        : [];
+      const platformMap = new Map(platforms.map((p) => [p.id, p]));
+
+      const enrichedGroups = groups.map((g) => ({
+        ...g,
+        platforms: g.platformIds.map((pid) => platformMap.get(pid)).filter(Boolean),
+      }));
+
+      res.json({ success: true, data: enrichedGroups });
     } catch (error) {
       next(error);
     }

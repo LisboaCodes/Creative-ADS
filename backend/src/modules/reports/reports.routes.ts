@@ -22,4 +22,7 @@ router.delete('/:id', (req, res) => reportsController.delete(req, res));
 // Get report as HTML
 router.get('/:id/html', (req, res) => reportsController.getHtml(req, res));
 
+// Download report as CSV
+router.get('/:id/csv', (req, res) => reportsController.getCsv(req, res));
+
 export default router;

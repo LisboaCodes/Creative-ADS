@@ -12,7 +12,10 @@ import { Badge } from '../components/ui/badge';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
@@ -543,36 +546,90 @@ export default function CampaignLibrary() {
 
           <div className="mt-4 space-y-4">
             {/* Step 0: Platform & Name */}
-            {applyStep === 0 && (
-              <div className="space-y-4">
-                <div>
-                  <Label>Conta de Anúncios</Label>
-                  <Select
-                    value={applyData.platformId}
-                    onValueChange={(v) => setApplyData({ ...applyData, platformId: v })}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Selecione uma conta" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {connectedPlatforms?.filter((p: any) => p.isConnected).map((p: any) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name} ({p.type})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            {applyStep === 0 && (() => {
+              // Group platforms by Business Manager
+              const connected = connectedPlatforms?.filter((p: any) => p.isConnected) || [];
+              const bmGroups = new Map<string, { bmName: string; platforms: any[] }>();
+              const ungrouped: any[] = [];
+
+              for (const p of connected) {
+                if (p.businessManagerId && p.businessManagerName) {
+                  const existing = bmGroups.get(p.businessManagerId);
+                  if (existing) {
+                    existing.platforms.push(p);
+                  } else {
+                    bmGroups.set(p.businessManagerId, { bmName: p.businessManagerName, platforms: [p] });
+                  }
+                } else {
+                  ungrouped.push(p);
+                }
+              }
+
+              const selectedPlatform = connected.find((p: any) => p.id === applyData.platformId);
+
+              return (
+                <div className="space-y-4">
+                  <div>
+                    <Label>Business Manager / Conta de Anúncios</Label>
+                    <Select
+                      value={applyData.platformId}
+                      onValueChange={(v) => setApplyData({ ...applyData, platformId: v })}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="Selecione uma conta de anúncios" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from(bmGroups.entries()).map(([bmId, group], idx) => (
+                          <SelectGroup key={bmId}>
+                            {idx > 0 && <SelectSeparator />}
+                            <SelectLabel className="text-xs uppercase tracking-wider text-muted-foreground">
+                              {group.bmName}
+                            </SelectLabel>
+                            {group.platforms.map((p: any) => (
+                              <SelectItem key={p.id} value={p.id}>
+                                <span className="flex items-center gap-2">
+                                  <span>{p.name}</span>
+                                  <span className="text-xs text-muted-foreground">({p.type})</span>
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        ))}
+                        {ungrouped.length > 0 && (
+                          <SelectGroup>
+                            {bmGroups.size > 0 && <SelectSeparator />}
+                            <SelectLabel className="text-xs uppercase tracking-wider text-muted-foreground">
+                              Contas Avulsas
+                            </SelectLabel>
+                            {ungrouped.map((p: any) => (
+                              <SelectItem key={p.id} value={p.id}>
+                                <span className="flex items-center gap-2">
+                                  <span>{p.name}</span>
+                                  <span className="text-xs text-muted-foreground">({p.type})</span>
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {selectedPlatform?.businessManagerName && (
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        BM: {selectedPlatform.businessManagerName} — ID: {selectedPlatform.externalId}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <Label>Nome da Campanha</Label>
+                    <Input
+                      value={applyData.campaignName}
+                      onChange={(e) => setApplyData({ ...applyData, campaignName: e.target.value })}
+                      className="mt-1"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <Label>Nome da Campanha</Label>
-                  <Input
-                    value={applyData.campaignName}
-                    onChange={(e) => setApplyData({ ...applyData, campaignName: e.target.value })}
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Step 1: Budget */}
             {applyStep === 1 && (

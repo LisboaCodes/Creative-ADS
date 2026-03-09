@@ -88,6 +88,25 @@ export default function Financial() {
     window.open(url, '_blank');
   };
 
+  const handleExportCsv = () => {
+    const headers = ['Periodo', 'Campanhas', 'Gasto', 'Cliques', 'Conversoes', 'Receita', 'ROAS', 'Custo/Conv.'];
+    const rows = periods.map((p: any) =>
+      [p.period, p.campaignCount, p.spend.toFixed(2), p.clicks, p.conversions, p.revenue.toFixed(2),
+       p.revenue > 0 ? p.roas.toFixed(2) : 'N/A', p.costPerConversion.toFixed(2)].join(',')
+    );
+    rows.push(['TOTAL', '-', (totals.spend || 0).toFixed(2), totals.clicks || 0, totals.conversions || 0,
+      (totals.revenue || 0).toFixed(2), (totals.revenue || 0) > 0 ? (totals.roas || 0).toFixed(2) : 'N/A',
+      (totals.costPerConversion || 0).toFixed(2)].join(','));
+    const csv = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'financeiro.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -102,9 +121,13 @@ export default function Financial() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleExportCsv}>
+            <Download className="h-4 w-4 mr-2" />
+            CSV
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExportHtml}>
             <Download className="h-4 w-4 mr-2" />
-            Exportar HTML
+            HTML
           </Button>
         </div>
       </div>

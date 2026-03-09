@@ -216,6 +216,53 @@ export class ReportsService {
       generatedAt: new Date().toLocaleString('pt-BR'),
     };
   }
+
+  /**
+   * Generate CSV for a report
+   */
+  async generateCsv(reportId: string, userId: string): Promise<string> {
+    const report = await this.getReportById(reportId, userId);
+    const config = report.config as any;
+
+    const input: GenerateReportInput = {
+      title: report.title,
+      template: report.template as any,
+      platformId: config.platformId || undefined,
+      startDate: new Date(config.startDate),
+      endDate: new Date(config.endDate),
+    };
+
+    const data = await this.buildReportData(userId, input);
+
+    // CSV header
+    const headers = ['Campanha', 'Plataforma', 'Status', 'Gasto', 'Cliques', 'Impressões', 'Conversões', 'Receita', 'CTR', 'ROAS'];
+    const rows = data.campaigns.map((c: any) => [
+      `"${c.name.replace(/"/g, '""')}"`,
+      c.platformType,
+      c.status,
+      c.spend.toFixed(2),
+      c.clicks,
+      c.impressions,
+      c.conversions,
+      c.revenue.toFixed(2),
+      `${c.ctr}%`,
+      `${c.roas}x`,
+    ].join(','));
+
+    // Add totals row
+    rows.push([
+      '"TOTAL"', '', '',
+      data.overview.spend.toFixed(2),
+      data.overview.clicks,
+      data.overview.impressions,
+      data.overview.conversions,
+      data.overview.revenue.toFixed(2),
+      `${data.overview.ctr}%`,
+      `${data.overview.roas}x`,
+    ].join(','));
+
+    return '\uFEFF' + [headers.join(','), ...rows].join('\n');
+  }
 }
 
 export const reportsService = new ReportsService();

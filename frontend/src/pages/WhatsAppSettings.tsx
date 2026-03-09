@@ -44,6 +44,7 @@ interface WhatsAppGroup {
   clientName: string;
   isActive: boolean;
   platformIds: string[];
+  platforms?: Array<{ id: string; name: string; type: string }>;
   notifyStatusChange: boolean;
   notifyBudgetChange: boolean;
   notifyPerformance: boolean;
@@ -348,9 +349,18 @@ export default function WhatsAppSettings() {
                         </Badge>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      {group.platformIds.length} conta{group.platformIds.length !== 1 ? 's' : ''} vinculada{group.platformIds.length !== 1 ? 's' : ''}
-                    </p>
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {(group.platforms || []).map((p) => (
+                        <Badge key={p.id} variant="outline" className="text-xs">
+                          {p.name}
+                        </Badge>
+                      ))}
+                      {(!group.platforms || group.platforms.length === 0) && (
+                        <span className="text-xs text-destructive">
+                          Nenhuma conta vinculada - edite o grupo para vincular
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 ml-4">
                     <Button

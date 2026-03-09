@@ -18,6 +18,8 @@ import {
   BarChart3,
   Calendar,
   Minus,
+  Activity,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { subDays, format, startOfDay, endOfDay } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -344,11 +346,96 @@ export default function Dashboard() {
 
   const platformChartSeries = platformSpendData;
 
+  // ── CTR / ROAS / CPC line chart data ──
+  const performanceCategories = timeSeries?.map((item: any) => format(new Date(item.date), 'MMM dd')) || [];
+  const ctrData = timeSeries?.map((item: any) => Number((item.ctr ?? 0).toFixed(2))) || [];
+  const cpcData = timeSeries?.map((item: any) => Number((item.cpc ?? 0).toFixed(2))) || [];
+  const roasData = timeSeries?.map((item: any) => Number((item.roas ?? 0).toFixed(2))) || [];
+
+  const performanceChartOptions: ApexOptions = {
+    chart: { type: 'line', toolbar: { show: false } },
+    stroke: { curve: 'smooth', width: [2, 2, 2] },
+    colors: ['#F59E0B', '#3B82F6', '#10B981'],
+    xaxis: {
+      categories: performanceCategories,
+      labels: { rotate: -45, rotateAlways: performanceCategories.length > 10, style: { fontSize: '10px' } },
+    },
+    yaxis: [
+      { title: { text: 'CTR (%)' }, labels: { formatter: (v) => `${v.toFixed(1)}%` }, seriesName: 'CTR' },
+      { title: { text: 'CPC (R$)' }, opposite: true, labels: { formatter: (v) => `R$${v.toFixed(2)}` }, seriesName: 'CPC' },
+      { title: { text: 'ROAS' }, opposite: true, show: false, seriesName: 'ROAS' },
+    ],
+    legend: { position: 'top' },
+    tooltip: {
+      shared: true,
+      y: { formatter: (val: number, opts: any) => {
+        return opts.seriesIndex === 0 ? `${val}%` : opts.seriesIndex === 1 ? `R$${val.toFixed(2)}` : `${val}x`;
+      }},
+    },
+    dataLabels: { enabled: false },
+  };
+
+  const performanceChartSeries = [
+    { name: 'CTR', data: ctrData },
+    { name: 'CPC', data: cpcData },
+    { name: 'ROAS', data: roasData },
+  ];
+
+  // ── Period comparison bar chart data ──
+  const comparisonCategories = ['Gasto', 'Cliques', 'Conversões', 'Receita'];
+  const currentPeriodData = metrics
+    ? [metrics.spend, metrics.clicks, metrics.conversions, metrics.revenue]
+    : [0, 0, 0, 0];
+  const previousPeriodData = prevMetrics
+    ? [prevMetrics.spend, prevMetrics.clicks, prevMetrics.conversions, prevMetrics.revenue]
+    : [0, 0, 0, 0];
+
+  const comparisonChartOptions: ApexOptions = {
+    chart: { type: 'bar', toolbar: { show: false } },
+    plotOptions: { bar: { horizontal: true, barHeight: '50%', dataLabels: { position: 'top' } } },
+    colors: ['#3B82F6', '#94A3B8'],
+    xaxis: { categories: comparisonCategories },
+    legend: { position: 'top' },
+    tooltip: {
+      y: { formatter: (val, opts) => {
+        const idx = opts.dataPointIndex;
+        return idx === 0 || idx === 3 ? formatCurrency(val) : formatNumber(val);
+      }},
+    },
+    dataLabels: { enabled: false },
+  };
+
+  const comparisonChartSeries = [
+    { name: 'Período Atual', data: currentPeriodData },
+    { name: 'Período Anterior', data: previousPeriodData },
+  ];
+
+  // ── Conversion funnel chart data ──
+  const funnelData = metrics
+    ? [metrics.impressions, metrics.clicks, metrics.conversions]
+    : [0, 0, 0];
+
+  const funnelChartOptions: ApexOptions = {
+    chart: { type: 'bar', toolbar: { show: false } },
+    plotOptions: { bar: { horizontal: true, distributed: true, barHeight: '60%' } },
+    colors: ['#6366F1', '#3B82F6', '#10B981'],
+    xaxis: { categories: ['Impressões', 'Cliques', 'Conversões'] },
+    legend: { show: false },
+    tooltip: { y: { formatter: (val) => formatNumber(val) } },
+    dataLabels: {
+      enabled: true,
+      formatter: (val) => formatNumber(Number(val)),
+      style: { fontSize: '12px' },
+    },
+  };
+
+  const funnelChartSeries = [{ name: 'Volume', data: funnelData }];
+
   // Insight styling helpers
   const insightConfig: Record<string, { icon: typeof Lightbulb; color: string; bgColor: string; badgeVariant: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' }> = {
-    opportunity: { icon: Lightbulb, color: 'text-green-600', bgColor: 'bg-green-50 border-green-200', badgeVariant: 'success' },
-    warning: { icon: AlertTriangle, color: 'text-orange-600', bgColor: 'bg-orange-50 border-orange-200', badgeVariant: 'destructive' },
-    info: { icon: Info, color: 'text-blue-600', bgColor: 'bg-blue-50 border-blue-200', badgeVariant: 'default' },
+    opportunity: { icon: Lightbulb, color: 'text-green-600', bgColor: 'bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-800', badgeVariant: 'success' },
+    warning: { icon: AlertTriangle, color: 'text-orange-600', bgColor: 'bg-orange-50 border-orange-200 dark:bg-orange-950/30 dark:border-orange-800', badgeVariant: 'destructive' },
+    info: { icon: Info, color: 'text-blue-600', bgColor: 'bg-blue-50 border-blue-200 dark:bg-blue-950/30 dark:border-blue-800', badgeVariant: 'default' },
   };
 
   const insightTypeLabel: Record<string, string> = {
@@ -558,6 +645,84 @@ export default function Dashboard() {
             </Card>
           </div>
 
+          {/* Performance Metrics Over Time */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5 text-amber-500" />
+                CTR / CPC / ROAS ao Longo do Tempo
+              </CardTitle>
+              <CardDescription>Evolução das métricas de eficiência dos {PERIOD_LABEL[period]}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {ctrData.length > 0 ? (
+                <ReactApexChart
+                  options={performanceChartOptions}
+                  series={performanceChartSeries}
+                  type="line"
+                  height={300}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                  Sem dados de performance para este período
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Comparison + Funnel Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Period Comparison */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ArrowRightLeft className="h-5 w-5 text-blue-500" />
+                  Comparação de Períodos
+                </CardTitle>
+                <CardDescription>Período atual vs anterior ({period} dias)</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {metrics ? (
+                  <ReactApexChart
+                    options={comparisonChartOptions}
+                    series={comparisonChartSeries}
+                    type="bar"
+                    height={260}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-[260px] text-muted-foreground">
+                    Sem dados para comparação
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Conversion Funnel */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Filter className="h-5 w-5 text-indigo-500" />
+                  Funil de Conversão
+                </CardTitle>
+                <CardDescription>Impressões → Cliques → Conversões</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {metrics ? (
+                  <ReactApexChart
+                    options={funnelChartOptions}
+                    series={funnelChartSeries}
+                    type="bar"
+                    height={260}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-[260px] text-muted-foreground">
+                    Sem dados de funil disponíveis
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
           {/* AI Insights + Budget Forecast Row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Proactive AI Insights Card */}
@@ -639,7 +804,7 @@ export default function Dashboard() {
                   <div className="space-y-4">
                     {/* Main projected values */}
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="rounded-lg border bg-blue-50 border-blue-200 p-3">
+                      <div className="rounded-lg border bg-blue-50 border-blue-200 dark:bg-blue-950/40 dark:border-blue-800 p-3">
                         <p className="text-xs text-muted-foreground mb-1">Gasto Projetado (30d)</p>
                         <p className="text-lg font-bold text-blue-700">
                           {formatCurrency((forecast as ForecastData).projected30dSpend)}
@@ -648,7 +813,7 @@ export default function Dashboard() {
                           {formatCurrency((forecast as ForecastData).projectedDailySpend)}/dia
                         </p>
                       </div>
-                      <div className="rounded-lg border bg-green-50 border-green-200 p-3">
+                      <div className="rounded-lg border bg-green-50 border-green-200 dark:bg-green-950/40 dark:border-green-800 p-3">
                         <p className="text-xs text-muted-foreground mb-1">Receita Projetada (30d)</p>
                         <p className="text-lg font-bold text-green-700">
                           {formatCurrency((forecast as ForecastData).projected30dRevenue)}
@@ -657,7 +822,7 @@ export default function Dashboard() {
                           {formatCurrency((forecast as ForecastData).projectedDailyRevenue)}/dia
                         </p>
                       </div>
-                      <div className="rounded-lg border bg-purple-50 border-purple-200 p-3">
+                      <div className="rounded-lg border bg-purple-50 border-purple-200 dark:bg-purple-950/40 dark:border-purple-800 p-3">
                         <p className="text-xs text-muted-foreground mb-1">Cliques Projetados (30d)</p>
                         <p className="text-lg font-bold text-purple-700">
                           {formatNumber((forecast as ForecastData).projected30dClicks)}
@@ -666,7 +831,7 @@ export default function Dashboard() {
                           {formatNumber((forecast as ForecastData).projectedDailyClicks)}/dia
                         </p>
                       </div>
-                      <div className="rounded-lg border bg-orange-50 border-orange-200 p-3">
+                      <div className="rounded-lg border bg-orange-50 border-orange-200 dark:bg-orange-950/40 dark:border-orange-800 p-3">
                         <p className="text-xs text-muted-foreground mb-1">Conversões Projetadas (30d)</p>
                         <p className="text-lg font-bold text-orange-700">
                           {formatNumber((forecast as ForecastData).projected30dConversions)}

@@ -2,7 +2,8 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  engineType    = "binary"
   binaryTargets = ["native", "windows", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
@@ -78,6 +79,8 @@ model User {
   automationRules   AutomationRule[]
   auditLogs         AuditLog[]
   whatsappGroups    WhatsAppGroup[]
+  clients           Client[]
+  apiLogs           ApiLog[]
 
   @@index([email])
   @@map("users")
@@ -132,11 +135,14 @@ model Platform {
   userId          String
   user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   campaigns       Campaign[]
+  clientId        String?
+  client          Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
   @@unique([userId, type, externalId])
   @@index([userId])
   @@index([type])
   @@index([platformLoginId])
+  @@index([clientId])
   @@map("platforms")
 }
 
@@ -169,6 +175,7 @@ model Campaign {
   platform        Platform       @relation(fields: [platformId], references: [id], onDelete: Cascade)
   metrics         Metric[]
   adCreatives     AdCreative[]
+  adSets          AdSet[]
   tags            CampaignTag[]
 
   @@unique([platformId, externalId])
@@ -195,10 +202,55 @@ model AdCreative {
   // Relations
   campaignId      String
   campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  ads             Ad[]
 
   @@unique([campaignId, externalId])
   @@index([campaignId])
   @@map("ad_creatives")
+}
+
+model AdSet {
+  id              String         @id @default(cuid())
+  externalId      String
+  name            String
+  status          CampaignStatus
+  dailyBudget     Float?
+  lifetimeBudget  Float?
+  targeting       Json?
+  optimizationGoal String?
+  billingEvent    String?
+  startDate       DateTime?
+  endDate         DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  campaignId      String
+  campaign        Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  ads             Ad[]
+
+  @@unique([campaignId, externalId])
+  @@index([campaignId])
+  @@index([status])
+  @@map("ad_sets")
+}
+
+model Ad {
+  id              String         @id @default(cuid())
+  externalId      String
+  name            String
+  status          CampaignStatus
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  adSetId         String
+  adSet           AdSet          @relation(fields: [adSetId], references: [id], onDelete: Cascade)
+  creativeId      String?
+  creative        AdCreative?    @relation(fields: [creativeId], references: [id])
+
+  @@unique([adSetId, externalId])
+  @@index([adSetId])
+  @@index([status])
+  @@map("ads")
 }
 
 model Metric {
@@ -428,9 +480,8 @@ model Notification {
   userId    String
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, isRead, createdAt])
   @@index([userId])
-  @@index([isRead])
-  @@index([createdAt])
   @@map("notifications")
 }
 
@@ -543,8 +594,11 @@ model WhatsAppGroup {
   updatedAt   DateTime @updatedAt
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId    String?
+  client      Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([clientId])
   @@map("whatsapp_groups")
 }
 
@@ -591,4 +645,50 @@ model CampaignTemplate {
   @@index([objective])
   @@index([category])
   @@map("campaign_templates")
+}
+
+// ─── Client Management ─────────────
+
+model Client {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  company   String?
+  notes     String?  @db.Text
+  isActive  Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  platforms      Platform[]
+  whatsappGroups WhatsAppGroup[]
+
+  @@index([userId])
+  @@map("clients")
+}
+
+// ─── API Logs ─────────────
+
+model ApiLog {
+  id             String        @id @default(cuid())
+  method         String
+  url            String
+  requestBody    Json?
+  responseStatus Int?
+  responseBody   Json?
+  duration       Int?          // milliseconds
+  error          String?
+  platformType   PlatformType?
+  platformId     String?
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("api_logs")
 }

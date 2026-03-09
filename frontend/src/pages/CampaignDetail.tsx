@@ -21,8 +21,8 @@ import {
   Copy,
   Activity,
   MessageSquare,
-  Send,
   Loader2,
+  LayoutGrid,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
@@ -33,6 +33,22 @@ import { Skeleton } from '../components/ui/skeleton';
 import { Input } from '../components/ui/input';
 import { CreativeViewer } from '../components/ui/creative-viewer';
 import { useState } from 'react';
+import { Label } from '../components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 
 export default function CampaignDetail() {
   const { id } = useParams<{ id: string }>();
@@ -42,6 +58,9 @@ export default function CampaignDetail() {
   const [newTagName, setNewTagName] = useState('');
   const [showTagInput, setShowTagInput] = useState(false);
   const [sendingUpdate, setSendingUpdate] = useState(false);
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
+  const [targetPlatformId, setTargetPlatformId] = useState('');
+  const [duplicating, setDuplicating] = useState(false);
 
   const { data: campaign, isLoading, refetch } = useQuery({
     queryKey: ['campaign', id],
@@ -52,11 +71,40 @@ export default function CampaignDetail() {
     enabled: !!id,
   });
 
+  // Fetch platforms for duplicate dialog
+  const { data: platforms } = useQuery({
+    queryKey: ['platforms'],
+    queryFn: async () => {
+      const res = await api.get('/api/platforms');
+      return res.data.data;
+    },
+  });
+
   // Fetch audit log for this campaign
   const { data: auditLog } = useQuery({
     queryKey: ['audit-log', id],
     queryFn: async () => {
       const res = await api.get('/api/campaigns/audit-log', { params: { entityId: id } });
+      return res.data.data;
+    },
+    enabled: !!id,
+  });
+
+  // Fetch ad sets for this campaign
+  const { data: adSetsData } = useQuery({
+    queryKey: ['campaign-adsets', id],
+    queryFn: async () => {
+      const res = await api.get('/api/campaigns/adsets', { params: { campaignId: id, limit: 50 } });
+      return res.data.data;
+    },
+    enabled: !!id,
+  });
+
+  // Fetch ads for this campaign (all ad sets)
+  const { data: adsData } = useQuery({
+    queryKey: ['campaign-ads', id],
+    queryFn: async () => {
+      const res = await api.get('/api/campaigns/ads', { params: { campaignId: id, limit: 50 } });
       return res.data.data;
     },
     enabled: !!id,
@@ -154,18 +202,59 @@ export default function CampaignDetail() {
     );
   }
 
+  // Helper: extract specific action counts from metadata
+  const extractActionCount = (actions: any[] | undefined, actionTypes: string[]): number => {
+    if (!actions) return 0;
+    return actions
+      .filter((a: any) => actionTypes.includes(a.action_type))
+      .reduce((sum: number, a: any) => sum + Number(a.value || 0), 0);
+  };
+
   // Aggregate metrics from all days
   const metrics = campaign.metrics || [];
   const totals = metrics.reduce(
-    (acc: any, m: any) => ({
-      impressions: acc.impressions + Number(m.impressions || 0),
-      reach: acc.reach + Number(m.reach || 0),
-      clicks: acc.clicks + Number(m.clicks || 0),
-      spend: acc.spend + (m.spend || 0),
-      conversions: acc.conversions + (m.conversions || 0),
-      revenue: acc.revenue + (m.revenue || 0),
-    }),
-    { impressions: 0, reach: 0, clicks: 0, spend: 0, conversions: 0, revenue: 0 }
+    (acc: any, m: any) => {
+      const actions = m.metadata?.actions;
+      return {
+        impressions: acc.impressions + Number(m.impressions || 0),
+        reach: acc.reach + Number(m.reach || 0),
+        clicks: acc.clicks + Number(m.clicks || 0),
+        spend: acc.spend + (m.spend || 0),
+        conversions: acc.conversions + (m.conversions || 0),
+        revenue: acc.revenue + (m.revenue || 0),
+        messages: acc.messages + extractActionCount(actions, [
+          'onsite_conversion.messaging_conversation_started_7d',
+          'onsite_conversion.messaging_first_reply',
+          'messaging_conversation_started_7d',
+        ]),
+        leads: acc.leads + extractActionCount(actions, [
+          'lead',
+          'onsite_conversion.lead_grouped',
+          'offsite_conversion.fb_pixel_lead',
+        ]),
+        purchases: acc.purchases + extractActionCount(actions, [
+          'purchase',
+          'omni_purchase',
+          'offsite_conversion.fb_pixel_purchase',
+        ]),
+        linkClicks: acc.linkClicks + extractActionCount(actions, [
+          'link_click',
+        ]),
+        landingPageViews: acc.landingPageViews + extractActionCount(actions, [
+          'landing_page_view',
+        ]),
+        videoViews: acc.videoViews + extractActionCount(actions, [
+          'video_view',
+        ]),
+        pageEngagement: acc.pageEngagement + extractActionCount(actions, [
+          'page_engagement',
+        ]),
+        postEngagement: acc.postEngagement + extractActionCount(actions, [
+          'post_engagement',
+        ]),
+      };
+    },
+    { impressions: 0, reach: 0, clicks: 0, spend: 0, conversions: 0, revenue: 0, messages: 0, leads: 0, purchases: 0, linkClicks: 0, landingPageViews: 0, videoViews: 0, pageEngagement: 0, postEngagement: 0 }
   );
 
   const avgCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
@@ -174,6 +263,8 @@ export default function CampaignDetail() {
   const hasRevenue = totals.revenue > 0;
   const avgRoas = totals.spend > 0 && hasRevenue ? totals.revenue / totals.spend : 0;
   const convRate = totals.clicks > 0 ? (totals.conversions / totals.clicks) * 100 : 0;
+  const costPerMessage = totals.messages > 0 ? totals.spend / totals.messages : 0;
+  const costPerLead = totals.leads > 0 ? totals.spend / totals.leads : 0;
 
   const creatives = campaign.adCreatives || [];
 
@@ -284,13 +375,69 @@ export default function CampaignDetail() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => navigate(`/campaigns/new?duplicate=${campaign.id}`)}
+            onClick={() => setDuplicateDialogOpen(true)}
           >
             <Copy className="h-4 w-4 mr-2" />
             Duplicar
           </Button>
         </div>
       </div>
+
+      {/* Duplicate Campaign Dialog */}
+      <Dialog open={duplicateDialogOpen} onOpenChange={setDuplicateDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Duplicar Campanha</DialogTitle>
+            <DialogDescription>
+              Escolha a plataforma/BM de destino. A campanha será criada como rascunho.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>Campanha Origem</Label>
+              <p className="text-sm text-muted-foreground mt-1">{campaign.name}</p>
+            </div>
+            <div>
+              <Label>Plataforma de Destino</Label>
+              <Select value={targetPlatformId} onValueChange={setTargetPlatformId}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Selecione a conta de destino" />
+                </SelectTrigger>
+                <SelectContent>
+                  {platforms?.filter((p: any) => p.isConnected).map((p: any) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} ({p.type})
+                      {p.businessManagerName ? ` - ${p.businessManagerName}` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDuplicateDialogOpen(false)}>Cancelar</Button>
+            <Button
+              disabled={!targetPlatformId || duplicating}
+              onClick={async () => {
+                setDuplicating(true);
+                try {
+                  const res = await api.post(`/api/campaigns/${campaign.id}/duplicate`, { targetPlatformId });
+                  toast.success('Campanha duplicada como rascunho!');
+                  setDuplicateDialogOpen(false);
+                  navigate(`/campaigns/${res.data.data.id}`);
+                } catch (err: any) {
+                  toast.error(err.response?.data?.error || 'Falha ao duplicar');
+                } finally {
+                  setDuplicating(false);
+                }
+              }}
+            >
+              {duplicating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Copy className="h-4 w-4 mr-2" />}
+              Duplicar como Rascunho
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -448,6 +595,218 @@ export default function CampaignDetail() {
         </Card>
       </div>
 
+      {/* Action Breakdown — all action types */}
+      {(totals.messages > 0 || totals.leads > 0 || totals.purchases > 0 || totals.linkClicks > 0 || totals.videoViews > 0 || totals.postEngagement > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Target className="h-5 w-5" />
+              Resultados por Tipo de Ação
+            </CardTitle>
+            <CardDescription>Detalhamento das conversões e ações da campanha</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              {totals.messages > 0 && (
+                <div className="border rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                    <MessageSquare className="h-4 w-4" />
+                    Mensagens
+                  </div>
+                  <div className="text-2xl font-bold">{formatNumber(totals.messages)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Custo/msg: {formatCurrency(costPerMessage)}
+                  </div>
+                </div>
+              )}
+              {totals.leads > 0 && (
+                <div className="border rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                    <Target className="h-4 w-4" />
+                    Leads
+                  </div>
+                  <div className="text-2xl font-bold">{formatNumber(totals.leads)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Custo/lead: {formatCurrency(costPerLead)}
+                  </div>
+                </div>
+              )}
+              {totals.purchases > 0 && (
+                <div className="border rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                    <DollarSign className="h-4 w-4" />
+                    Compras
+                  </div>
+                  <div className="text-2xl font-bold">{formatNumber(totals.purchases)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Receita: {formatCurrency(totals.revenue)}
+                  </div>
+                </div>
+              )}
+              {totals.linkClicks > 0 && (
+                <div className="border rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                    <MousePointer className="h-4 w-4" />
+                    Cliques no Link
+                  </div>
+                  <div className="text-2xl font-bold">{formatNumber(totals.linkClicks)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    CPC link: {formatCurrency(totals.spend / totals.linkClicks)}
+                  </div>
+                </div>
+              )}
+              {totals.videoViews > 0 && (
+                <div className="border rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                    <Eye className="h-4 w-4" />
+                    Views de Vídeo
+                  </div>
+                  <div className="text-2xl font-bold">{formatNumber(totals.videoViews)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Custo/view: {formatCurrency(totals.spend / totals.videoViews)}
+                  </div>
+                </div>
+              )}
+              {totals.postEngagement > 0 && (
+                <div className="border rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                    <TrendingUp className="h-4 w-4" />
+                    Engajamento
+                  </div>
+                  <div className="text-2xl font-bold">{formatNumber(totals.postEngagement)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Custo/eng: {formatCurrency(totals.spend / totals.postEngagement)}
+                  </div>
+                </div>
+              )}
+              {totals.landingPageViews > 0 && (
+                <div className="border rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                    <Eye className="h-4 w-4" />
+                    Views da Landing Page
+                  </div>
+                  <div className="text-2xl font-bold">{formatNumber(totals.landingPageViews)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Custo/view: {formatCurrency(totals.spend / totals.landingPageViews)}
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Ad Sets */}
+      {adSetsData?.adSets && adSetsData.adSets.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <LayoutGrid className="h-5 w-5" />
+              Conjuntos de Anúncios
+            </CardTitle>
+            <CardDescription>{adSetsData.adSets.length} conjuntos encontrados</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Nome</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Status</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">Orç. Diário</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">Orç. Vitalício</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Otimização</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Cobrança</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adSetsData.adSets.map((adSet: any) => (
+                    <tr key={adSet.id} className="border-b hover:bg-muted/50">
+                      <td className="py-2 px-3">
+                        <div>
+                          <p className="font-medium">{adSet.name}</p>
+                          <p className="text-xs text-muted-foreground">ID: {adSet.externalId}</p>
+                        </div>
+                      </td>
+                      <td className="py-2 px-3">
+                        <Badge variant={adSet.status === 'ACTIVE' ? 'success' : 'secondary'}>
+                          {adSet.status === 'ACTIVE' ? 'Ativo' : adSet.status === 'PAUSED' ? 'Pausado' : adSet.status}
+                        </Badge>
+                      </td>
+                      <td className="py-2 px-3 text-right">{adSet.dailyBudget ? formatCurrency(adSet.dailyBudget) : '-'}</td>
+                      <td className="py-2 px-3 text-right">{adSet.lifetimeBudget ? formatCurrency(adSet.lifetimeBudget) : '-'}</td>
+                      <td className="py-2 px-3 text-xs">{adSet.optimizationGoal || '-'}</td>
+                      <td className="py-2 px-3 text-xs">{adSet.billingEvent || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Ads */}
+      {adsData?.ads && adsData.ads.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Image className="h-5 w-5" />
+              Anúncios
+            </CardTitle>
+            <CardDescription>{adsData.ads.length} anúncios encontrados</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Nome</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Conjunto</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Status</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Criativo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adsData.ads.map((ad: any) => (
+                    <tr key={ad.id} className="border-b hover:bg-muted/50">
+                      <td className="py-2 px-3">
+                        <div>
+                          <p className="font-medium">{ad.name}</p>
+                          <p className="text-xs text-muted-foreground">ID: {ad.externalId}</p>
+                        </div>
+                      </td>
+                      <td className="py-2 px-3 text-sm">{ad.adSet?.name || '-'}</td>
+                      <td className="py-2 px-3">
+                        <Badge variant={ad.status === 'ACTIVE' ? 'success' : 'secondary'}>
+                          {ad.status === 'ACTIVE' ? 'Ativo' : ad.status === 'PAUSED' ? 'Pausado' : ad.status}
+                        </Badge>
+                      </td>
+                      <td className="py-2 px-3">
+                        {ad.creative ? (
+                          <div className="flex items-center gap-2">
+                            {(ad.creative.thumbnailUrl || ad.creative.imageUrl) && (
+                              <img
+                                src={ad.creative.thumbnailUrl || ad.creative.imageUrl}
+                                alt=""
+                                className="h-8 w-8 rounded object-cover"
+                              />
+                            )}
+                            <span className="text-xs text-muted-foreground truncate max-w-[150px]">
+                              {ad.creative.title || ad.creative.name || '-'}
+                            </span>
+                          </div>
+                        ) : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Daily Metrics Table */}
       {metrics.length > 0 && (
         <Card>
@@ -470,6 +829,8 @@ export default function CampaignDetail() {
                     <th className="text-right py-2 px-3 font-medium text-muted-foreground">CTR</th>
                     <th className="text-right py-2 px-3 font-medium text-muted-foreground">Gasto</th>
                     <th className="text-right py-2 px-3 font-medium text-muted-foreground">CPC</th>
+                    {totals.messages > 0 && <th className="text-right py-2 px-3 font-medium text-muted-foreground">Msgs</th>}
+                    {totals.leads > 0 && <th className="text-right py-2 px-3 font-medium text-muted-foreground">Leads</th>}
                     <th className="text-right py-2 px-3 font-medium text-muted-foreground">Conv.</th>
                     <th className="text-right py-2 px-3 font-medium text-muted-foreground">Receita</th>
                     <th className="text-right py-2 px-3 font-medium text-muted-foreground">ROAS</th>
@@ -484,6 +845,24 @@ export default function CampaignDetail() {
                       <td className="py-2 px-3 text-right">{formatPercentage(m.ctr)}</td>
                       <td className="py-2 px-3 text-right">{formatCurrency(m.spend)}</td>
                       <td className="py-2 px-3 text-right">{formatCurrency(m.cpc)}</td>
+                      {totals.messages > 0 && (
+                        <td className="py-2 px-3 text-right">
+                          {extractActionCount(m.metadata?.actions, [
+                            'onsite_conversion.messaging_conversation_started_7d',
+                            'onsite_conversion.messaging_first_reply',
+                            'messaging_conversation_started_7d',
+                          ])}
+                        </td>
+                      )}
+                      {totals.leads > 0 && (
+                        <td className="py-2 px-3 text-right">
+                          {extractActionCount(m.metadata?.actions, [
+                            'lead',
+                            'onsite_conversion.lead_grouped',
+                            'offsite_conversion.fb_pixel_lead',
+                          ])}
+                        </td>
+                      )}
                       <td className="py-2 px-3 text-right">{m.conversions}</td>
                       <td className="py-2 px-3 text-right">{formatCurrency(m.revenue)}</td>
                       <td className="py-2 px-3 text-right">

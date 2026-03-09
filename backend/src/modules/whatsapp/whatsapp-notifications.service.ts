@@ -80,6 +80,14 @@ export class WhatsAppNotificationsService {
       if (metrics.spend !== undefined) lines.push(`Gasto: ${formatCurrency(metrics.spend)}`);
       if (metrics.revenue !== undefined) lines.push(`Receita: ${formatCurrency(metrics.revenue)}`);
       lines.push(``, `💡 Sugestão: Considere pausar ou otimizar a campanha.`);
+    } else if (alertType === 'ZERO_SPEND') {
+      lines.push(`Status: ATIVA sem gasto nos últimos 2 dias`);
+      lines.push(``, `💡 Sugestão: Verifique orçamento, público e criativos. A campanha pode estar sem veiculação.`);
+    } else if (alertType === 'CPC_HIGH' && (metrics as any).cpc !== undefined) {
+      lines.push(`CPC atual: ${formatCurrency((metrics as any).cpc)} (acima de R$5,00)`);
+      if (metrics.clicks !== undefined) lines.push(`Cliques: ${formatNumber(metrics.clicks)}`);
+      if (metrics.spend !== undefined) lines.push(`Gasto: ${formatCurrency(metrics.spend)}`);
+      lines.push(``, `💡 Sugestão: Otimize o público ou reduza lances para diminuir o CPC.`);
     }
 
     return lines.join('\n');
@@ -319,7 +327,8 @@ export class WhatsAppNotificationsService {
     });
 
     if (groups.length === 0) {
-      throw new Error('Nenhum grupo de WhatsApp vinculado a esta conta de anúncio');
+      const platformName = campaign.platform?.name || campaign.platformId;
+      throw new Error(`Nenhum grupo de WhatsApp vinculado à conta "${platformName}". Vá em WhatsApp > Editar grupo e vincule esta conta.`);
     }
 
     const sentTo: string[] = [];
@@ -351,7 +360,10 @@ export class WhatsAppNotificationsService {
       metrics?: any;
     }
   ): Promise<void> {
-    if (!evolutionService.isConfigured()) return;
+    if (!evolutionService.isConfigured()) {
+      logger.debug('WhatsApp notification skipped: Evolution API not configured');
+      return;
+    }
 
     // SEGURANÇA: platformId é OBRIGATÓRIO para garantir isolamento entre clientes
     // Sem platformId, não envia para nenhum grupo (previne vazamento de dados)

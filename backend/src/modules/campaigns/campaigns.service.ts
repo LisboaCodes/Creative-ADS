@@ -31,7 +31,11 @@ export class CampaignsService {
     const { platformType, status, search, platformId, hasSpend, page = 1, limit = 20 } = filters;
 
     // Check cache first (60s TTL)
-    const cacheKey = `campaigns:${userId}:${JSON.stringify(filters)}`;
+    const sortedFilters = Object.keys(filters).sort().reduce((acc: any, key) => {
+      acc[key] = (filters as any)[key];
+      return acc;
+    }, {});
+    const cacheKey = `campaigns:${userId}:${JSON.stringify(sortedFilters)}`;
     const cached = await cache.get(cacheKey);
     if (cached) return cached;
 
@@ -52,6 +56,9 @@ export class CampaignsService {
 
     if (status) {
       where.status = status;
+    } else {
+      // By default, exclude DELETED campaigns from listing
+      where.status = { not: 'DELETED' as CampaignStatus };
     }
 
     if (search) {
@@ -135,10 +142,26 @@ export class CampaignsService {
       if (!existing) {
         seen.set(key, c);
       } else {
-        // Keep the one with more spend, merge metrics
-        if (c.aggregated30d.totalSpend > existing.aggregated30d.totalSpend) {
-          seen.set(key, c);
-        }
+        // Merge metrics from both platforms instead of dropping one
+        existing.aggregated30d.totalSpend += c.aggregated30d.totalSpend;
+        existing.aggregated30d.totalClicks += c.aggregated30d.totalClicks;
+        existing.aggregated30d.totalImpressions += c.aggregated30d.totalImpressions;
+        existing.aggregated30d.totalConversions += c.aggregated30d.totalConversions;
+        existing.aggregated30d.totalRevenue += c.aggregated30d.totalRevenue;
+        // Recalculate derived metrics
+        existing.aggregated30d.avgCtr = existing.aggregated30d.totalImpressions > 0
+          ? Math.round((existing.aggregated30d.totalClicks / existing.aggregated30d.totalImpressions) * 100 * 100) / 100
+          : 0;
+        existing.aggregated30d.avgCpc = existing.aggregated30d.totalClicks > 0
+          ? Math.round((existing.aggregated30d.totalSpend / existing.aggregated30d.totalClicks) * 100) / 100
+          : 0;
+        existing.aggregated30d.avgRoas = existing.aggregated30d.totalSpend > 0
+          ? Math.round((existing.aggregated30d.totalRevenue / existing.aggregated30d.totalSpend) * 100) / 100
+          : 0;
+        existing.aggregated30d.hasSpend = existing.aggregated30d.totalSpend > 0;
+        // Round spend and revenue
+        existing.aggregated30d.totalSpend = Math.round(existing.aggregated30d.totalSpend * 100) / 100;
+        existing.aggregated30d.totalRevenue = Math.round(existing.aggregated30d.totalRevenue * 100) / 100;
       }
     }
     const dedupedCampaigns = Array.from(seen.values());
@@ -200,6 +223,154 @@ export class CampaignsService {
   }
 
   /**
+   * Get ad sets for listing
+   */
+  async getAdSets(
+    userId: string,
+    filters: {
+      campaignId?: string;
+      status?: CampaignStatus;
+      search?: string;
+      page?: number;
+      limit?: number;
+    }
+  ) {
+    const { campaignId, status, search, page = 1, limit = 20 } = filters;
+
+    const where: any = {
+      campaign: {
+        platform: {
+          userId,
+          isConnected: true,
+        },
+      },
+    };
+
+    if (campaignId) {
+      where.campaignId = campaignId;
+    }
+
+    if (status) {
+      where.status = status;
+    } else {
+      where.status = { not: 'DELETED' as CampaignStatus };
+    }
+
+    if (search) {
+      where.name = { contains: search, mode: 'insensitive' };
+    }
+
+    const [adSets, total] = await Promise.all([
+      prisma.adSet.findMany({
+        where,
+        include: {
+          campaign: {
+            select: { id: true, name: true, platformType: true },
+          },
+          _count: { select: { ads: true } },
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.adSet.count({ where }),
+    ]);
+
+    return {
+      adSets,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Get ads for listing
+   */
+  async getAds(
+    userId: string,
+    filters: {
+      adSetId?: string;
+      campaignId?: string;
+      status?: CampaignStatus;
+      search?: string;
+      page?: number;
+      limit?: number;
+    }
+  ) {
+    const { adSetId, campaignId, status, search, page = 1, limit = 20 } = filters;
+
+    const where: any = {
+      adSet: {
+        campaign: {
+          platform: {
+            userId,
+            isConnected: true,
+          },
+        },
+      },
+    };
+
+    if (adSetId) {
+      where.adSetId = adSetId;
+    }
+
+    if (campaignId) {
+      where.adSet = {
+        ...where.adSet,
+        campaignId,
+      };
+    }
+
+    if (status) {
+      where.status = status;
+    } else {
+      where.status = { not: 'DELETED' as CampaignStatus };
+    }
+
+    if (search) {
+      where.name = { contains: search, mode: 'insensitive' };
+    }
+
+    const [ads, total] = await Promise.all([
+      prisma.ad.findMany({
+        where,
+        include: {
+          adSet: {
+            select: {
+              id: true,
+              name: true,
+              campaign: {
+                select: { id: true, name: true, platformType: true },
+              },
+            },
+          },
+          creative: {
+            select: { id: true, name: true, thumbnailUrl: true, imageUrl: true, body: true, title: true },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.ad.count({ where }),
+    ]);
+
+    return {
+      ads,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
    * Get campaign by ID
    */
   async getCampaignById(campaignId: string, userId: string) {
@@ -216,7 +387,10 @@ export class CampaignsService {
           orderBy: { date: 'desc' },
           take: 30, // Last 30 days
         },
-        adCreatives: true,
+        adCreatives: {
+          take: 50,
+          orderBy: { createdAt: 'desc' },
+        },
         tags: true,
       },
     });
@@ -1359,6 +1533,59 @@ Responda APENAS em JSON valido, sem markdown, no formato:
       successful,
       failed,
     };
+  }
+
+  /**
+   * Duplicate a campaign to a different platform/BM as DRAFT
+   */
+  async duplicateCampaign(
+    campaignId: string,
+    userId: string,
+    targetPlatformId: string
+  ) {
+    // Get source campaign
+    const source = await prisma.campaign.findFirst({
+      where: { id: campaignId, platform: { userId } },
+      include: { platform: true },
+    });
+
+    if (!source) {
+      throw new NotFoundError('Campanha não encontrada');
+    }
+
+    // Verify target platform belongs to user
+    const targetPlatform = await prisma.platform.findFirst({
+      where: { id: targetPlatformId, userId },
+    });
+
+    if (!targetPlatform) {
+      throw new NotFoundError('Plataforma de destino não encontrada');
+    }
+
+    // Create as DRAFT with copied configuration
+    const duplicate = await prisma.campaign.create({
+      data: {
+        name: `${source.name} (cópia)`,
+        status: 'DRAFT',
+        platformType: targetPlatform.type,
+        platformId: targetPlatformId,
+        dailyBudget: source.dailyBudget,
+        lifetimeBudget: source.lifetimeBudget,
+        currency: source.currency,
+        draftData: source.draftData || {
+          objective: '',
+          targeting: {},
+          creative: {},
+        },
+      },
+    });
+
+    // Invalidate cache
+    this.invalidateAIContextCache(userId);
+
+    logger.info(`Campaign ${campaignId} duplicated to platform ${targetPlatformId} as draft ${duplicate.id}`);
+
+    return duplicate;
   }
 }
 

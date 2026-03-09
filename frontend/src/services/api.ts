@@ -27,6 +27,23 @@ api.interceptors.request.use(
 let isRefreshing = false;
 let failedQueue: Array<{ resolve: (token: string) => void; reject: (error: any) => void }> = [];
 
+// Cross-tab token refresh coordination
+const tokenChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('auth-token-refresh') : null;
+
+if (tokenChannel) {
+  tokenChannel.onmessage = (event) => {
+    if (event.data.type === 'TOKEN_REFRESHED') {
+      localStorage.setItem('accessToken', event.data.accessToken);
+      localStorage.setItem('refreshToken', event.data.refreshToken);
+      processQueue(null, event.data.accessToken);
+      isRefreshing = false;
+    } else if (event.data.type === 'TOKEN_REFRESH_FAILED') {
+      processQueue(new Error('Token refresh failed in another tab'), null);
+      isRefreshing = false;
+    }
+  };
+}
+
 const processQueue = (error: any, token: string | null = null) => {
   failedQueue.forEach((prom) => {
     if (error) {
@@ -104,12 +121,16 @@ api.interceptors.response.use(
         localStorage.setItem('accessToken', accessToken);
         localStorage.setItem('refreshToken', newRefreshToken);
 
+        // Notify other tabs
+        tokenChannel?.postMessage({ type: 'TOKEN_REFRESHED', accessToken, refreshToken: newRefreshToken });
+
         processQueue(null, accessToken);
 
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
+        tokenChannel?.postMessage({ type: 'TOKEN_REFRESH_FAILED' });
 
         // Clear auth store completely to prevent redirect loop
         useAuthStore.getState().clearAuth();

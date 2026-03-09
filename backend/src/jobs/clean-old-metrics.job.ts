@@ -18,9 +18,19 @@ cleanOldMetricsQueue.process('clean-old-metrics', async (job) => {
       },
     });
 
-    logger.info(`Old metrics cleanup completed: ${result.count} records deleted (older than ${cutoffDate.toISOString()})`);
+    // Clean API logs older than 7 days
+    const apiLogCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const apiLogResult = await prisma.apiLog.deleteMany({
+      where: { createdAt: { lt: apiLogCutoff } },
+    });
 
-    return { deletedCount: result.count, cutoffDate: cutoffDate.toISOString() };
+    logger.info(`Old metrics cleanup completed: ${result.count} metrics deleted, ${apiLogResult.count} API logs deleted`);
+
+    return {
+      deletedMetrics: result.count,
+      deletedApiLogs: apiLogResult.count,
+      cutoffDate: cutoffDate.toISOString(),
+    };
   } catch (error: any) {
     logger.error('Old metrics cleanup failed:', {
       message: error.message,

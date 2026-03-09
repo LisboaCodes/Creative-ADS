@@ -21,6 +21,8 @@ import Financial from './pages/Financial';
 import AutomationRules from './pages/AutomationRules';
 import CampaignLibrary from './pages/CampaignLibrary';
 import WhatsAppSettings from './pages/WhatsAppSettings';
+import Clients from './pages/Clients';
+import ApiLogs from './pages/ApiLogs';
 
 // Layout
 import AppLayout from './components/layout/AppLayout';
@@ -103,6 +105,8 @@ function App() {
             <Route path="automation" element={<ErrorBoundary><AutomationRules /></ErrorBoundary>} />
             <Route path="campaign-library" element={<ErrorBoundary><CampaignLibrary /></ErrorBoundary>} />
             <Route path="whatsapp" element={<ErrorBoundary><WhatsAppSettings /></ErrorBoundary>} />
+            <Route path="clients" element={<ErrorBoundary><Clients /></ErrorBoundary>} />
+            <Route path="api-logs" element={<ErrorBoundary><ApiLogs /></ErrorBoundary>} />
           </Route>
 
           {/* Logout */}

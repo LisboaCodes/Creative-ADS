@@ -27,8 +27,12 @@ import {
   Zap,
   BookOpen,
   MessageSquare,
+  Sun,
+  Moon,
+  Users,
+  Activity,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { Button } from '../ui/button';
 import {
@@ -80,6 +84,22 @@ export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('creative-ads-dark-mode') === 'true';
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (darkMode) {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    localStorage.setItem('creative-ads-dark-mode', String(darkMode));
+  }, [darkMode]);
 
   const handleLogout = () => {
     clearAuth();
@@ -125,6 +145,8 @@ export default function AppLayout() {
     { name: 'Financeiro', href: '/financial', icon: Wallet },
     { name: 'Biblioteca', href: '/campaign-library', icon: BookOpen },
     { name: 'WhatsApp', href: '/whatsapp', icon: MessageSquare },
+    { name: 'Clientes', href: '/clients', icon: Users },
+    { name: 'API Logs', href: '/api-logs', icon: Activity },
   ];
 
   const isActive = (path: string) => location.pathname === path;
@@ -174,7 +196,7 @@ export default function AppLayout() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-1">
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {navigation.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
@@ -210,23 +232,49 @@ export default function AppLayout() {
           </div>
         )}
 
-        {/* User Section */}
-        {sidebarOpen && (
-          <div className="p-3 border-t">
-            <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent">
-              <Avatar className="h-9 w-9">
-                <AvatarImage src={user?.avatar} />
-                <AvatarFallback className="bg-primary text-primary-foreground">
-                  {getUserInitials()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{user?.name}</p>
-                <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+        {/* Dark Mode Toggle + User Section */}
+        <div className="border-t">
+          {sidebarOpen ? (
+            <div className="px-3 pt-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start text-muted-foreground"
+                onClick={() => setDarkMode(!darkMode)}
+              >
+                {darkMode ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
+                {darkMode ? 'Modo Claro' : 'Modo Escuro'}
+              </Button>
+            </div>
+          ) : (
+            <div className="p-2 flex justify-center">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setDarkMode(!darkMode)}
+                title={darkMode ? 'Modo Claro' : 'Modo Escuro'}
+              >
+                {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </Button>
+            </div>
+          )}
+          {sidebarOpen && (
+            <div className="px-3 pb-3 pt-1">
+              <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent">
+                <Avatar className="h-9 w-9">
+                  <AvatarImage src={user?.avatar} />
+                  <AvatarFallback className="bg-primary text-primary-foreground">
+                    {getUserInitials()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{user?.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </aside>
 
       {/* Mobile Menu Overlay */}
@@ -288,8 +336,17 @@ export default function AppLayout() {
             })}
           </nav>
 
-          {/* User Section */}
-          <div className="p-3 border-t">
+          {/* Dark Mode + User Section */}
+          <div className="p-3 border-t space-y-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start text-muted-foreground"
+              onClick={() => setDarkMode(!darkMode)}
+            >
+              {darkMode ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
+              {darkMode ? 'Modo Claro' : 'Modo Escuro'}
+            </Button>
             <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent">
               <Avatar className="h-9 w-9">
                 <AvatarImage src={user?.avatar} />
@@ -340,12 +397,24 @@ export default function AppLayout() {
                 '/financial': 'Financeiro',
                 '/campaign-library': 'Biblioteca de Campanhas',
                 '/whatsapp': 'WhatsApp',
+                '/clients': 'Clientes',
+                '/api-logs': 'API Logs',
               } as Record<string, string>)[location.pathname] || 'Painel'}
             </h2>
           </div>
 
           {/* Header Actions */}
           <div className="flex items-center gap-2">
+            {/* Dark Mode Toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setDarkMode(!darkMode)}
+              title={darkMode ? 'Modo Claro' : 'Modo Escuro'}
+            >
+              {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+            </Button>
+
             {/* Notifications Bell */}
             <Popover open={notifOpen} onOpenChange={setNotifOpen}>
               <PopoverTrigger asChild>
