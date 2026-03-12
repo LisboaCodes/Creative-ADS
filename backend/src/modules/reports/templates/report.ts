@@ -87,7 +87,7 @@ export function buildReportHtml(data: ReportData): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${data.title} - Multi Ads</title>
+  <title>${data.title} - HackrAds</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #fff; }
@@ -176,7 +176,7 @@ export function buildReportHtml(data: ReportData): string {
     ${financialSection}
 
     <div class="footer">
-      <p>Relatorio gerado automaticamente por <strong>Multi Ads Platform</strong></p>
+      <p>Relatorio gerado automaticamente por <strong>HackrAds</strong></p>
       <p>${data.generatedAt}</p>
     </div>
   </div>

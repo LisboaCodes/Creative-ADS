@@ -31,6 +31,7 @@ import {
   Moon,
   Users,
   Activity,
+  GraduationCap,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -146,6 +147,7 @@ export default function AppLayout() {
     { name: 'Biblioteca', href: '/campaign-library', icon: BookOpen },
     { name: 'WhatsApp', href: '/whatsapp', icon: MessageSquare },
     { name: 'Clientes', href: '/clients', icon: Users },
+    { name: 'Base de Conhecimento', href: '/knowledge-base', icon: GraduationCap },
     { name: 'API Logs', href: '/api-logs', icon: Activity },
   ];
 
@@ -178,7 +180,7 @@ export default function AppLayout() {
               <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
                 <BarChart3 className="h-5 w-5 text-primary-foreground" />
               </div>
-              <h1 className="text-xl font-bold">Multi Ads</h1>
+              <h1 className="text-xl font-bold">HackrAds</h1>
             </div>
           ) : (
             <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center mx-auto">
@@ -299,7 +301,7 @@ export default function AppLayout() {
               <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
                 <BarChart3 className="h-5 w-5 text-primary-foreground" />
               </div>
-              <h1 className="text-xl font-bold">Multi Ads</h1>
+              <h1 className="text-xl font-bold">HackrAds</h1>
             </div>
             <Button
               variant="ghost"

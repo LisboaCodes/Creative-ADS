@@ -9,6 +9,7 @@ import './jobs/sync-campaigns.job';
 import './jobs/check-alerts.job';
 import './jobs/clean-old-metrics.job';
 import './jobs/whatsapp-daily-summary.job';
+import './jobs/scheduled-reports.job';
 
 const app = createApp();
 
@@ -17,7 +18,7 @@ const server = app.listen(env.PORT, () => {
   logger.info(`
     ╔══════════════════════════════════════════════════════════╗
     ║                                                          ║
-    ║         Multi Ads Platform API - v1.0.0                 ║
+    ║         HackrAds API - v1.0.0                 ║
     ║                                                          ║
     ║  Server running on: ${env.APP_URL.padEnd(30)} ║
     ║  Environment: ${env.NODE_ENV.padEnd(40)} ║

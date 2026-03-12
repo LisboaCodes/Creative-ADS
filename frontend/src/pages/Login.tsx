@@ -50,7 +50,7 @@ export default function Login() {
               <BarChart3 className="h-10 w-10 text-primary-foreground" />
             </div>
           </div>
-          <h2 className="text-4xl font-bold tracking-tight">Multi Ads Platform</h2>
+          <h2 className="text-4xl font-bold tracking-tight">HackrAds</h2>
           <p className="mt-2 text-muted-foreground">
             Painel centralizado para gerenciar anúncios em todas as plataformas
           </p>

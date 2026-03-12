@@ -81,6 +81,8 @@ model User {
   whatsappGroups    WhatsAppGroup[]
   clients           Client[]
   apiLogs           ApiLog[]
+  budgetCaps        PlatformBudgetCap[]
+  abTests           ABTest[]
 
   @@index([email])
   @@map("users")
@@ -498,15 +500,29 @@ model AutomationRule {
   description     String?
   status          AutomationRuleStatus @default(ACTIVE)
 
-  // Condition: metric, operator, value, period
+  // Rule type
+  ruleType        String               @default("simple") // simple|compound|scaling|dayparting|anomaly|auto_restart
+
+  // Condition: metric, operator, value, period (used by simple rules)
   metric          String               // 'ctr', 'cpc', 'roas', 'spend', 'cpm', 'conversions'
   operator        String               // 'lt', 'gt', 'lte', 'gte', 'eq'
   value           Float
   periodDays      Int                  @default(3) // Evaluate over X days
 
+  // Compound rule conditions
+  conditions      Json?                // [{metric,operator,value,periodDays}] for compound rules
+  conditionLogic  String?              // 'AND' | 'OR'
+
+  // Type-specific configuration (scaling, dayparting, anomaly, auto_restart)
+  config          Json?
+
   // Action to take when condition is met
-  actionType      String               // 'pause', 'activate', 'increase_budget', 'decrease_budget', 'notify'
+  actionType      String               // 'pause', 'activate', 'increase_budget', 'decrease_budget', 'notify', 'webhook'
   actionValue     Float?               // e.g., percentage for budget changes
+
+  // Webhook action fields
+  webhookUrl      String?
+  webhookHeaders  Json?
 
   // Scope: which campaigns this rule applies to
   applyTo         String               @default("all") // 'all', 'active', 'specific'
@@ -529,6 +545,60 @@ model AutomationRule {
   @@index([userId])
   @@index([status])
   @@map("automation_rules")
+}
+
+// Platform Budget Caps
+model PlatformBudgetCap {
+  id                 String       @id @default(cuid())
+  platformType       PlatformType
+  dailyCapAmount     Float?
+  weeklyCapAmount    Float?
+  currentDailySpend  Float        @default(0)
+  currentWeeklySpend Float        @default(0)
+  lastResetDay       DateTime?
+  lastResetWeek      DateTime?
+  isActive           Boolean      @default(true)
+
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  userId             String
+  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platformType])
+  @@index([userId])
+  @@map("platform_budget_caps")
+}
+
+// A/B Tests
+enum ABTestStatus {
+  RUNNING
+  EVALUATING
+  COMPLETED
+  CANCELLED
+}
+
+model ABTest {
+  id               String       @id @default(cuid())
+  name             String
+  status           ABTestStatus @default(RUNNING)
+  campaignIds      String[]
+  metric           String       // metric to compare: 'ctr', 'cpc', 'roas', 'conversions'
+  evaluationDays   Int          @default(7)
+  totalDailyBudget Float?
+  winnerId         String?      // campaign ID of the winner
+  results          Json?        // comparison results
+  startedAt        DateTime     @default(now())
+  evaluateAt       DateTime     // when to evaluate
+  completedAt      DateTime?
+
+  userId           String
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([evaluateAt])
+  @@index([userId])
+  @@map("ab_tests")
 }
 
 // Campaign Tags

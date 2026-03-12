@@ -30,7 +30,7 @@ const swaggerOptions = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'Multi Ads Platform API',
+      title: 'HackrAds API',
       version: '1.0.0',
       description: 'API for managing multi-channel advertising campaigns',
     },
@@ -110,7 +110,7 @@ export function createApp(): Application {
   app.get('/', (req, res) => {
     res.status(200).json({
       success: true,
-      message: 'Multi Ads Platform API',
+      message: 'HackrAds API',
       version: '1.0.0',
       docs: `${env.APP_URL}/api-docs`,
     });

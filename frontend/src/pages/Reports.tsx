@@ -13,6 +13,7 @@ import {
   Trash2,
   Download,
   Printer,
+  CalendarClock,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -27,6 +28,8 @@ import {
   DialogTitle,
 } from '../components/ui/dialog';
 import { toast } from 'sonner';
+import { Switch } from '../components/ui/switch';
+import { Label } from '../components/ui/label';
 import { subDays, startOfDay, endOfDay } from 'date-fns';
 
 const templateOptions = [
@@ -129,6 +132,58 @@ export default function Reports() {
     },
   });
 
+  // Schedule state
+  const [scheduleDialog, setScheduleDialog] = useState(false);
+  const [scheduleReportId, setScheduleReportId] = useState('');
+  const [scheduleFrequency, setScheduleFrequency] = useState('weekly');
+  const [scheduleHour, setScheduleHour] = useState('8');
+  const [schedulePeriodDays, setSchedulePeriodDays] = useState('30');
+  const [scheduleSendWhatsApp, setScheduleSendWhatsApp] = useState(false);
+
+  // Schedule mutation
+  const scheduleMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post(`/api/reports/${scheduleReportId}/schedule`, {
+        frequency: scheduleFrequency,
+        hour: Number(scheduleHour),
+        periodDays: Number(schedulePeriodDays),
+        sendWhatsApp: scheduleSendWhatsApp,
+      });
+      return res.data.data;
+    },
+    onSuccess: () => {
+      toast.success('Relatorio agendado!');
+      setScheduleDialog(false);
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error || 'Falha ao agendar');
+    },
+  });
+
+  // Unschedule mutation
+  const unscheduleMutation = useMutation({
+    mutationFn: async (reportId: string) => {
+      await api.delete(`/api/reports/${reportId}/schedule`);
+    },
+    onSuccess: () => {
+      toast.success('Agendamento removido!');
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error || 'Falha ao remover agendamento');
+    },
+  });
+
+  const handleSchedule = (reportId: string) => {
+    setScheduleReportId(reportId);
+    setScheduleFrequency('weekly');
+    setScheduleHour('8');
+    setSchedulePeriodDays('30');
+    setScheduleSendWhatsApp(false);
+    setScheduleDialog(true);
+  };
+
   const handleDelete = (reportId: string) => {
     if (window.confirm('Tem certeza que deseja apagar este relatorio?')) {
       deleteMutation.mutate(reportId);
@@ -222,6 +277,7 @@ export default function Reports() {
                     <th className="text-left py-2 px-3 font-medium text-muted-foreground">Titulo</th>
                     <th className="text-left py-2 px-3 font-medium text-muted-foreground">Template</th>
                     <th className="text-left py-2 px-3 font-medium text-muted-foreground">Status</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Agendamento</th>
                     <th className="text-left py-2 px-3 font-medium text-muted-foreground">Data</th>
                     <th className="text-right py-2 px-3 font-medium text-muted-foreground">Acoes</th>
                   </tr>
@@ -242,6 +298,16 @@ export default function Reports() {
                             <StatusIcon className={`h-3 w-3 mr-1 ${report.status === 'GENERATING' ? 'animate-spin' : ''}`} />
                             {statusLabels[report.status] || report.status}
                           </Badge>
+                        </td>
+                        <td className="py-2 px-3">
+                          {report.isScheduled ? (
+                            <Badge variant="default" className="text-xs">
+                              <CalendarClock className="h-3 w-3 mr-1" />
+                              {(report.scheduleConfig as any)?.frequency || 'agendado'}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
                         </td>
                         <td className="py-2 px-3 text-muted-foreground">
                           {formatDate(report.generatedAt || report.createdAt)}
@@ -278,6 +344,28 @@ export default function Reports() {
                                 </Button>
                               </>
                             )}
+                            {report.status === 'COMPLETED' && !report.isScheduled && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleSchedule(report.id)}
+                                title="Agendar"
+                              >
+                                <CalendarClock className="h-3 w-3 mr-1" />
+                                Agendar
+                              </Button>
+                            )}
+                            {report.isScheduled && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => { if (window.confirm('Remover agendamento?')) unscheduleMutation.mutate(report.id); }}
+                                disabled={unscheduleMutation.isPending}
+                              >
+                                <XCircle className="h-3 w-3 mr-1" />
+                                Desagendar
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="sm"
@@ -298,6 +386,48 @@ export default function Reports() {
           )}
         </CardContent>
       </Card>
+
+      {/* Schedule Report Dialog */}
+      <Dialog open={scheduleDialog} onOpenChange={setScheduleDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Agendar Relatorio</DialogTitle>
+            <DialogDescription>Configure a geracao automatica deste relatorio</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label className="text-sm font-medium mb-1 block">Frequencia</Label>
+              <select className="w-full border rounded-md px-3 py-2 text-sm bg-background" value={scheduleFrequency} onChange={(e) => setScheduleFrequency(e.target.value)}>
+                <option value="daily">Diario</option>
+                <option value="weekly">Semanal</option>
+                <option value="biweekly">Quinzenal</option>
+                <option value="monthly">Mensal</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-sm font-medium mb-1 block">Hora de geracao</Label>
+                <input type="number" min="0" max="23" className="w-full border rounded-md px-3 py-2 text-sm bg-background" value={scheduleHour} onChange={(e) => setScheduleHour(e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-sm font-medium mb-1 block">Periodo (dias)</Label>
+                <input type="number" min="1" className="w-full border rounded-md px-3 py-2 text-sm bg-background" value={schedulePeriodDays} onChange={(e) => setSchedulePeriodDays(e.target.value)} />
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch checked={scheduleSendWhatsApp} onCheckedChange={setScheduleSendWhatsApp} />
+              <Label className="text-sm">Enviar por WhatsApp</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScheduleDialog(false)}>Cancelar</Button>
+            <Button onClick={() => scheduleMutation.mutate()} disabled={scheduleMutation.isPending}>
+              {scheduleMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CalendarClock className="h-4 w-4 mr-2" />}
+              Agendar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create Report Dialog */}
       <Dialog open={createDialog} onOpenChange={setCreateDialog}>

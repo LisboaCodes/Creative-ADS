@@ -218,6 +218,67 @@ export class ReportsService {
   }
 
   /**
+   * Schedule a report for recurring generation
+   */
+  async scheduleReport(reportId: string, userId: string, config: {
+    frequency: string; // 'daily' | 'weekly' | 'biweekly' | 'monthly'
+    hour?: number;
+    periodDays?: number;
+    sendWhatsApp?: boolean;
+  }) {
+    const report = await prisma.report.findFirst({
+      where: { id: reportId, userId },
+    });
+    if (!report) throw new Error('Relatorio nao encontrado');
+
+    const hour = config.hour ?? 8;
+    const nextRunAt = new Date();
+    nextRunAt.setHours(hour, 0, 0, 0);
+
+    // Set next run based on frequency
+    switch (config.frequency) {
+      case 'daily': nextRunAt.setDate(nextRunAt.getDate() + 1); break;
+      case 'weekly': nextRunAt.setDate(nextRunAt.getDate() + 7); break;
+      case 'biweekly': nextRunAt.setDate(nextRunAt.getDate() + 14); break;
+      case 'monthly': nextRunAt.setMonth(nextRunAt.getMonth() + 1); break;
+      default: nextRunAt.setDate(nextRunAt.getDate() + 7);
+    }
+
+    return prisma.report.update({
+      where: { id: reportId },
+      data: {
+        isScheduled: true,
+        scheduleConfig: {
+          frequency: config.frequency,
+          hour,
+          periodDays: config.periodDays || 30,
+          sendWhatsApp: config.sendWhatsApp || false,
+        },
+        nextRunAt,
+      },
+    });
+  }
+
+  /**
+   * Unschedule a report
+   */
+  async unscheduleReport(reportId: string, userId: string) {
+    const report = await prisma.report.findFirst({
+      where: { id: reportId, userId },
+    });
+    if (!report) throw new Error('Relatorio nao encontrado');
+
+    return prisma.report.update({
+      where: { id: reportId },
+      data: {
+        isScheduled: false,
+        scheduleConfig: undefined,
+        nextRunAt: undefined,
+      },
+    });
+  }
+
+  /**
    * Generate CSV for a report
    */
   async generateCsv(reportId: string, userId: string): Promise<string> {

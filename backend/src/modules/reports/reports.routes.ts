@@ -19,6 +19,12 @@ router.get('/:id', (req, res) => reportsController.getById(req, res));
 // Delete a report
 router.delete('/:id', (req, res) => reportsController.delete(req, res));
 
+// Schedule a report
+router.post('/:id/schedule', (req, res) => reportsController.schedule(req, res));
+
+// Unschedule a report
+router.delete('/:id/schedule', (req, res) => reportsController.unschedule(req, res));
+
 // Get report as HTML
 router.get('/:id/html', (req, res) => reportsController.getHtml(req, res));
 

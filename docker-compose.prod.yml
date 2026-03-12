@@ -5,7 +5,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: creative-ads-backend
+    container_name: hackrads-backend
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -34,7 +34,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: creative-ads-frontend
+    container_name: hackrads-frontend
     restart: unless-stopped
     ports:
       - "3080:80"
@@ -55,4 +55,4 @@ networks:
   coolify:
     external: true
   default:
-    name: creative-ads-network
+    name: hackrads-network

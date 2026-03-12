@@ -4,7 +4,7 @@ services:
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
-    container_name: multi-ads-postgres
+    container_name: hackrads-postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -22,7 +22,7 @@ services:
   # Redis Cache & Queue
   redis:
     image: redis:7-alpine
-    container_name: multi-ads-redis
+    container_name: hackrads-redis
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -39,7 +39,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
-    container_name: multi-ads-backend
+    container_name: hackrads-backend
     environment:
       NODE_ENV: development
       PORT: 3000
@@ -64,7 +64,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
-    container_name: multi-ads-frontend
+    container_name: hackrads-frontend
     environment:
       VITE_API_URL: http://localhost:3000
     volumes:
@@ -83,4 +83,4 @@ volumes:
 
 networks:
   default:
-    name: multi-ads-network
+    name: hackrads-network

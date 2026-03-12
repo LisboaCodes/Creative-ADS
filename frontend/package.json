@@ -1,7 +1,7 @@
 {
-  "name": "multi-ads-platform-frontend",
+  "name": "hackrads-frontend",
   "version": "1.0.0",
-  "description": "Frontend for Multi Ads Platform",
+  "description": "Frontend for HackrAds",
   "type": "module",
   "scripts": {
     "dev": "vite",

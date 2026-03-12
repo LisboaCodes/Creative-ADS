@@ -341,7 +341,7 @@ function buildFinancialHtml(periods: any[], totals: any, _platformId: string, st
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Relatorio Financeiro - Multi Ads</title>
+  <title>Relatorio Financeiro - HackrAds</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { font-family: 'Segoe UI', sans-serif; padding: 2rem; }
@@ -356,7 +356,7 @@ function buildFinancialHtml(periods: any[], totals: any, _platformId: string, st
   <div class="container">
     <div class="header">
       <h1>Relatorio Financeiro</h1>
-      <p class="text-muted">Multi Ads Platform | Periodo: ${new Date(startDate).toLocaleDateString('pt-BR')} - ${new Date(endDate).toLocaleDateString('pt-BR')}</p>
+      <p class="text-muted">HackrAds | Periodo: ${new Date(startDate).toLocaleDateString('pt-BR')} - ${new Date(endDate).toLocaleDateString('pt-BR')}</p>
     </div>
 
     <div class="row g-3 mb-4">
@@ -415,7 +415,7 @@ function buildFinancialHtml(periods: any[], totals: any, _platformId: string, st
     </table>
 
     <footer class="text-center text-muted mt-4 pt-3 border-top">
-      <small>Gerado automaticamente por Multi Ads Platform em ${new Date().toLocaleDateString('pt-BR')}</small>
+      <small>Gerado automaticamente por HackrAds em ${new Date().toLocaleDateString('pt-BR')}</small>
     </footer>
   </div>
 </body>

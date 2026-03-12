@@ -8,7 +8,8 @@ type EventType =
   | 'CAMPAIGN_CREATED'
   | 'AUTOMATION_TRIGGERED'
   | 'PERFORMANCE_ALERT'
-  | 'DAILY_SUMMARY';
+  | 'DAILY_SUMMARY'
+  | 'REPORT_GENERATED';
 
 const statusLabels: Record<string, string> = {
   ACTIVE: 'Ativa ✅',
@@ -358,6 +359,9 @@ export class WhatsAppNotificationsService {
       metricValue?: number;
       alertType?: string;
       metrics?: any;
+      reportTitle?: string;
+      template?: string;
+      period?: string;
     }
   ): Promise<void> {
     if (!evolutionService.isConfigured()) {
@@ -413,6 +417,19 @@ export class WhatsAppNotificationsService {
           if (!data.campaign || !data.alertType) break;
           message = this.formatPerformanceAlert(data.campaign.name, data.alertType, data.metrics || {});
           break;
+
+        case 'REPORT_GENERATED':
+          if (data.reportTitle) {
+            message = [
+              `📄 *Relatório Gerado*`,
+              ``,
+              `Título: *${data.reportTitle}*`,
+              data.period ? `Período: ${data.period}` : '',
+              ``,
+              `Gerado em ${formatDate()} às ${formatTime()}`,
+            ].filter(Boolean).join('\n');
+          }
+          break;
       }
 
       if (!message) return;
@@ -425,6 +442,7 @@ export class WhatsAppNotificationsService {
         AUTOMATION_TRIGGERED: 'notifyStatusChange',
         PERFORMANCE_ALERT: 'notifyPerformance',
         DAILY_SUMMARY: 'notifyDailySummary',
+        REPORT_GENERATED: 'notifyDailySummary',
       };
 
       const field = notifField[eventType];

@@ -156,7 +156,7 @@ export class WhatsAppController {
       }
 
       const testMessage = [
-        `✅ *Teste de Conexão - Multi Ads*`,
+        `✅ *Teste de Conexão - HackrAds*`,
         ``,
         `Grupo: *${group.groupName}*`,
         `Cliente: ${group.clientName}`,

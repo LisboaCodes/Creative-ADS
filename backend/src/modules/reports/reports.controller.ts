@@ -130,6 +130,54 @@ export class ReportsController {
   }
 
   /**
+   * POST /api/reports/:id/schedule - Schedule a report
+   */
+  async schedule(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const report = await reportsService.scheduleReport(req.params.id, req.user.userId, req.body);
+
+      res.status(200).json({
+        success: true,
+        data: report,
+      });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Schedule report error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
+   * DELETE /api/reports/:id/schedule - Unschedule a report
+   */
+  async unschedule(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const report = await reportsService.unscheduleReport(req.params.id, req.user.userId);
+
+      res.status(200).json({
+        success: true,
+        data: report,
+      });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Unschedule report error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
    * GET /api/reports/:id/csv - Download report as CSV
    */
   async getCsv(req: AuthRequest, res: Response) {

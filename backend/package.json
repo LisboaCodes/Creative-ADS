@@ -1,7 +1,7 @@
 {
-  "name": "multi-ads-platform-backend",
+  "name": "hackrads-backend",
   "version": "1.0.0",
-  "description": "Backend for Multi Ads Platform - Centralized dashboard for managing ads across multiple platforms",
+  "description": "Backend for HackrAds - Centralized dashboard for managing ads across multiple platforms",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",

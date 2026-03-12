@@ -2,6 +2,10 @@ import { checkAlertsQueue } from '../config/queue';
 import { prisma } from '../config/database';
 import { notificationsService } from '../modules/notifications/notifications.service';
 import { whatsAppNotificationsService } from '../modules/whatsapp/whatsapp-notifications.service';
+import { automationService } from '../modules/automation/automation.service';
+import { budgetCapService } from '../modules/automation/budget-cap.service';
+import { abTestService } from '../modules/automation/ab-test.service';
+import { crossPlatformService } from '../modules/automation/cross-platform.service';
 import { logger } from '../utils/logger';
 import { env } from '../config/env';
 
@@ -25,6 +29,37 @@ checkAlertsQueue.process('check-alerts', async (job) => {
     } catch (error: any) {
       logger.error(`Alert check failed for user ${user.id}:`, error.message);
     }
+
+    // Execute user automation rules (P0 fix: was never called before)
+    try {
+      const result = await automationService.executeRulesForUser(user.id);
+      if (result.triggered > 0) {
+        logger.info(`Automation rules for user ${user.id}: ${result.triggered}/${result.executed} triggered`);
+      }
+    } catch (error: any) {
+      logger.error(`Automation rules failed for user ${user.id}:`, error.message);
+    }
+
+    // Check platform budget caps (F7)
+    try {
+      await budgetCapService.checkAndEnforceCaps(user.id);
+    } catch (error: any) {
+      logger.error(`Budget cap check failed for user ${user.id}:`, error.message);
+    }
+
+    // Check cross-platform duplication suggestions (F9 - once per day check)
+    try {
+      await crossPlatformService.checkAndSuggest(user.id);
+    } catch (error: any) {
+      logger.error(`Cross-platform check failed for user ${user.id}:`, error.message);
+    }
+  }
+
+  // Evaluate A/B tests that are due (F2)
+  try {
+    await abTestService.evaluateDueTests();
+  } catch (error: any) {
+    logger.error('A/B test evaluation failed:', error.message);
   }
 
   logger.info(`Alert checks completed for ${users.length} users`);
