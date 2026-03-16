@@ -20,6 +20,11 @@ router.get('/ab-tests', authenticate, (req, res) => automationController.getABTe
 router.post('/ab-tests', authenticate, (req, res) => automationController.createABTest(req, res));
 router.patch('/ab-tests/:id/cancel', authenticate, (req, res) => automationController.cancelABTest(req, res));
 
+// Campaign Schedules (Pause/Resume)
+router.get('/schedules', authenticate, (req, res) => automationController.getSchedules(req, res));
+router.post('/schedules', authenticate, (req, res) => automationController.createSchedule(req, res));
+router.delete('/schedules/:id', authenticate, (req, res) => automationController.cancelSchedule(req, res));
+
 // Cross-Platform Duplication (F9)
 router.post('/duplicate-campaign', authenticate, (req, res) => automationController.duplicateCampaign(req, res));
 

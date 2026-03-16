@@ -265,6 +265,7 @@ export class FacebookService extends BasePlatformService {
           externalId: campaign.id,
           name: campaign.name,
           status: this.mapFacebookStatus(campaign.effective_status),
+          originalStatus: campaign.effective_status,
           dailyBudget: campaign.daily_budget ? Number(campaign.daily_budget) / 100 : undefined,
           lifetimeBudget: campaign.lifetime_budget
             ? Number(campaign.lifetime_budget) / 100
@@ -574,6 +575,9 @@ export class FacebookService extends BasePlatformService {
       if (data.targeting.genders) targeting.genders = data.targeting.genders;
       if (data.targeting.interests) {
         targeting.flexible_spec = [{ interests: data.targeting.interests }];
+      }
+      if (data.targeting.customAudiences && data.targeting.customAudiences.length > 0) {
+        targeting.custom_audiences = data.targeting.customAudiences.map((a) => ({ id: a.id }));
       }
 
       const payload: any = {
@@ -1143,6 +1147,175 @@ export class FacebookService extends BasePlatformService {
       return allAds;
     } catch (error: any) {
       logger.error('Facebook get ads error:', error.response?.data || error.message);
+      return [];
+    }
+  }
+
+  // ─── Custom Audiences ─────────────────────────────────
+
+  /**
+   * Create a Custom Audience on Facebook
+   */
+  async createCustomAudience(
+    accessToken: string,
+    adAccountId: string,
+    data: { name: string; description?: string; subtype?: string }
+  ): Promise<{ id: string }> {
+    try {
+      const response = await loggedRequest(
+        {
+          method: 'POST',
+          url: `${FACEBOOK_GRAPH_API}/${adAccountId}/customaudiences`,
+          data: {
+            name: data.name,
+            description: data.description || '',
+            subtype: data.subtype || 'CUSTOM',
+            customer_file_source: 'USER_PROVIDED_ONLY',
+          },
+          params: { access_token: accessToken },
+        },
+        { platformType: PlatformType.FACEBOOK }
+      );
+
+      logger.info(`Created Facebook custom audience: ${response.data.id}`);
+      return { id: response.data.id };
+    } catch (error: any) {
+      logger.error('Facebook create custom audience error:', error.response?.data || error.message);
+      throw new Error(error.response?.data?.error?.message || 'Failed to create custom audience');
+    }
+  }
+
+  /**
+   * Add hashed emails to a Custom Audience (batches of 10k)
+   */
+  async addUsersToCustomAudience(
+    accessToken: string,
+    audienceId: string,
+    hashedEmails: string[]
+  ): Promise<void> {
+    const BATCH_SIZE = 10000;
+
+    for (let i = 0; i < hashedEmails.length; i += BATCH_SIZE) {
+      const batch = hashedEmails.slice(i, i + BATCH_SIZE);
+
+      try {
+        await loggedRequest(
+          {
+            method: 'POST',
+            url: `${FACEBOOK_GRAPH_API}/${audienceId}/users`,
+            data: {
+              payload: JSON.stringify({
+                schema: 'EMAIL_SHA256',
+                data: batch,
+              }),
+            },
+            params: { access_token: accessToken },
+          },
+          { platformType: PlatformType.FACEBOOK }
+        );
+
+        logger.info(`Added batch ${Math.floor(i / BATCH_SIZE) + 1} (${batch.length} emails) to audience ${audienceId}`);
+      } catch (error: any) {
+        logger.error(`Facebook add users to audience error (batch ${Math.floor(i / BATCH_SIZE) + 1}):`, error.response?.data || error.message);
+        throw new Error(error.response?.data?.error?.message || 'Failed to add users to audience');
+      }
+    }
+  }
+
+  /**
+   * Get Custom Audience details (including approximate_count)
+   */
+  async getCustomAudience(
+    accessToken: string,
+    audienceId: string
+  ): Promise<{ id: string; name: string; approximateCount?: number }> {
+    try {
+      const response = await loggedRequest(
+        {
+          method: 'GET',
+          url: `${FACEBOOK_GRAPH_API}/${audienceId}`,
+          params: {
+            access_token: accessToken,
+            fields: 'id,name,approximate_count,delivery_status,operation_status',
+          },
+        },
+        { platformType: PlatformType.FACEBOOK }
+      );
+
+      return {
+        id: response.data.id,
+        name: response.data.name,
+        approximateCount: response.data.approximate_count,
+      };
+    } catch (error: any) {
+      logger.error('Facebook get custom audience error:', error.response?.data || error.message);
+      throw new Error(error.response?.data?.error?.message || 'Failed to get custom audience');
+    }
+  }
+
+  /**
+   * Delete a Custom Audience
+   */
+  async deleteCustomAudience(
+    accessToken: string,
+    audienceId: string
+  ): Promise<void> {
+    try {
+      await loggedRequest(
+        {
+          method: 'DELETE',
+          url: `${FACEBOOK_GRAPH_API}/${audienceId}`,
+          params: { access_token: accessToken },
+        },
+        { platformType: PlatformType.FACEBOOK }
+      );
+
+      logger.info(`Deleted Facebook custom audience: ${audienceId}`);
+    } catch (error: any) {
+      logger.error('Facebook delete custom audience error:', error.response?.data || error.message);
+      throw new Error(error.response?.data?.error?.message || 'Failed to delete custom audience');
+    }
+  }
+
+  /**
+   * List Custom Audiences for an ad account
+   */
+  async listCustomAudiences(
+    accessToken: string,
+    adAccountId: string
+  ): Promise<Array<{ id: string; name: string; approximateCount?: number }>> {
+    try {
+      const audiences: Array<{ id: string; name: string; approximateCount?: number }> = [];
+      let url: string | null = `${FACEBOOK_GRAPH_API}/${adAccountId}/customaudiences`;
+      let params: any = {
+        access_token: accessToken,
+        fields: 'id,name,approximate_count',
+        limit: 100,
+      };
+
+      while (url) {
+        const response: { data: any } = await loggedRequest(
+          { method: 'GET', url, params },
+          { platformType: PlatformType.FACEBOOK }
+        );
+
+        if (response.data.data) {
+          for (const aud of response.data.data) {
+            audiences.push({
+              id: aud.id,
+              name: aud.name,
+              approximateCount: aud.approximate_count,
+            });
+          }
+        }
+
+        url = response.data.paging?.next || null;
+        params = {};
+      }
+
+      return audiences;
+    } catch (error: any) {
+      logger.error('Facebook list custom audiences error:', error.response?.data || error.message);
       return [];
     }
   }

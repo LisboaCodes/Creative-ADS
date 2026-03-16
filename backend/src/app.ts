@@ -24,6 +24,7 @@ import campaignLibraryRoutes from './modules/campaign-library/campaign-library.r
 import whatsappRoutes from './modules/whatsapp/whatsapp.routes';
 import clientsRoutes from './modules/clients/clients.routes';
 import apiLogsRoutes from './modules/api-logs/api-logs.routes';
+import audiencesRoutes from './modules/audiences/audiences.routes';
 
 // Swagger configuration
 const swaggerOptions = {
@@ -93,6 +94,7 @@ export function createApp(): Application {
   app.use('/api/whatsapp', whatsappRoutes);
   app.use('/api/clients', clientsRoutes);
   app.use('/api/api-logs', apiLogsRoutes);
+  app.use('/api/audiences', audiencesRoutes);
 
   // Swagger documentation
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));

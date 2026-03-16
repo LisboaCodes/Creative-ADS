@@ -24,6 +24,7 @@ import WhatsAppSettings from './pages/WhatsAppSettings';
 import Clients from './pages/Clients';
 import ApiLogs from './pages/ApiLogs';
 import KnowledgeBase from './pages/KnowledgeBase';
+import Audiences from './pages/Audiences';
 
 // Layout
 import AppLayout from './components/layout/AppLayout';
@@ -108,6 +109,7 @@ function App() {
             <Route path="whatsapp" element={<ErrorBoundary><WhatsAppSettings /></ErrorBoundary>} />
             <Route path="clients" element={<ErrorBoundary><Clients /></ErrorBoundary>} />
             <Route path="api-logs" element={<ErrorBoundary><ApiLogs /></ErrorBoundary>} />
+            <Route path="audiences" element={<ErrorBoundary><Audiences /></ErrorBoundary>} />
             <Route path="knowledge-base" element={<ErrorBoundary><KnowledgeBase /></ErrorBoundary>} />
           </Route>
 

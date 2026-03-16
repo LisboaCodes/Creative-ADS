@@ -53,6 +53,7 @@ export const createCampaignSchema = z.object({
       ageMax: z.number().min(13).max(65).optional(),
       genders: z.array(z.number()).optional(),
       interests: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
+      customAudiences: z.array(z.object({ id: z.string() })).optional(),
     })
     .optional(),
   creative: z

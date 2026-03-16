@@ -3,6 +3,7 @@ import { logger } from '../../utils/logger';
 import { campaignsService } from '../campaigns/campaigns.service';
 import { notificationsService } from '../notifications/notifications.service';
 import { whatsAppNotificationsService } from '../whatsapp/whatsapp-notifications.service';
+import { scheduledPauseQueue } from '../../config/queue';
 
 export class AutomationService {
   async getRules(userId: string) {
@@ -733,6 +734,109 @@ export class AutomationService {
         metadata: { ruleId: rule.id, campaignId: campaign.id, action: 'webhook', error: error.message },
       });
     }
+  }
+
+  // ─── Campaign Schedules (Pause/Resume) ─────────────────────────────────
+
+  async getSchedules(userId: string) {
+    return prisma.campaignSchedule.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      include: { campaign: { select: { id: true, name: true, status: true, platformType: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createSchedule(userId: string, input: {
+    campaignId: string;
+    type: 'once' | 'recurring';
+    pauseDuration: number; // minutes
+    resumeDuration?: number; // minutes (recurring only)
+    maxExecutions?: number;
+  }) {
+    // Validate campaign belongs to user and is active
+    const campaign = await prisma.campaign.findFirst({
+      where: {
+        id: input.campaignId,
+        platform: { userId },
+        status: 'ACTIVE',
+      },
+      include: { platform: true },
+    });
+
+    if (!campaign) {
+      throw new Error('Campanha não encontrada ou não está ativa');
+    }
+
+    // Check no active schedule already exists for this campaign
+    const existing = await prisma.campaignSchedule.findFirst({
+      where: {
+        campaignId: input.campaignId,
+        status: { in: ['active', 'paused_waiting'] },
+      },
+    });
+
+    if (existing) {
+      throw new Error('Já existe um agendamento ativo para esta campanha');
+    }
+
+    // Create schedule and immediately pause
+    const schedule = await prisma.campaignSchedule.create({
+      data: {
+        userId,
+        campaignId: input.campaignId,
+        type: input.type,
+        pauseDuration: input.pauseDuration,
+        resumeDuration: input.type === 'recurring' ? input.resumeDuration : null,
+        maxExecutions: input.maxExecutions || null,
+        status: 'active',
+      },
+      include: { campaign: { select: { id: true, name: true, status: true, platformType: true } } },
+    });
+
+    // Immediately trigger pause via Bull job (no delay)
+    await scheduledPauseQueue.add('pause-campaign', { scheduleId: schedule.id });
+
+    return schedule;
+  }
+
+  async cancelSchedule(userId: string, scheduleId: string) {
+    const schedule = await prisma.campaignSchedule.findFirst({
+      where: { id: scheduleId, userId },
+      include: { campaign: { include: { platform: true } } },
+    });
+
+    if (!schedule) {
+      throw new Error('Agendamento não encontrado');
+    }
+
+    if (schedule.status === 'cancelled' || schedule.status === 'completed') {
+      throw new Error('Agendamento já finalizado');
+    }
+
+    // Remove pending Bull job
+    if (schedule.jobId) {
+      try {
+        const job = await scheduledPauseQueue.getJob(schedule.jobId);
+        if (job) await job.remove();
+      } catch (err: any) {
+        logger.warn(`Failed to remove Bull job ${schedule.jobId}:`, err.message);
+      }
+    }
+
+    // If campaign was paused by this schedule, reactivate it
+    if (schedule.currentAction === 'paused') {
+      try {
+        await campaignsService.updateCampaignStatus(schedule.campaignId, userId, { status: 'ACTIVE' });
+      } catch (err: any) {
+        logger.warn(`Failed to reactivate campaign on schedule cancel:`, err.message);
+      }
+    }
+
+    return prisma.campaignSchedule.update({
+      where: { id: scheduleId },
+      data: { status: 'cancelled', jobId: null, nextActionAt: null },
+      include: { campaign: { select: { id: true, name: true, status: true, platformType: true } } },
+    });
   }
 
   private async logAudit(

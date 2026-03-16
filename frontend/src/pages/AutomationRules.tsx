@@ -18,6 +18,9 @@ import {
   Wallet,
   FlaskConical,
   X,
+  Timer,
+  Play,
+  Pause,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -94,6 +97,25 @@ interface ABTest {
   startedAt: string;
   evaluateAt: string;
   completedAt: string | null;
+}
+
+interface CampaignSchedule {
+  id: string;
+  type: string;
+  pauseDuration: number;
+  resumeDuration: number | null;
+  status: string;
+  currentAction: string | null;
+  nextActionAt: string | null;
+  executionCount: number;
+  maxExecutions: number | null;
+  createdAt: string;
+  campaign: {
+    id: string;
+    name: string;
+    status: string;
+    platformType: string;
+  };
 }
 
 // --- Label maps ---
@@ -180,6 +202,22 @@ function buildActionText(rule: AutomationRule): string {
   return action;
 }
 
+function formatDurationLabel(minutes: number): string {
+  if (minutes < 60) return `${minutes}min`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours < 24) return mins > 0 ? `${hours}h ${mins}min` : `${hours}h`;
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`;
+}
+
+function toMinutes(value: number, unit: 'minutes' | 'hours' | 'days'): number {
+  if (unit === 'hours') return value * 60;
+  if (unit === 'days') return value * 60 * 24;
+  return value;
+}
+
 // --- Component ---
 
 export default function AutomationRules() {
@@ -239,6 +277,16 @@ export default function AutomationRules() {
   const [abBudget, setAbBudget] = useState('');
   const [abCampaignIds, setAbCampaignIds] = useState('');
 
+  // ─── Schedule state ─────────────────────────────────
+  const [schedDialogOpen, setSchedDialogOpen] = useState(false);
+  const [schedCampaignId, setSchedCampaignId] = useState('');
+  const [schedType, setSchedType] = useState<'once' | 'recurring'>('once');
+  const [schedPauseDuration, setSchedPauseDuration] = useState('30');
+  const [schedPauseUnit, setSchedPauseUnit] = useState<'minutes' | 'hours' | 'days'>('minutes');
+  const [schedResumeDuration, setSchedResumeDuration] = useState('60');
+  const [schedResumeUnit, setSchedResumeUnit] = useState<'minutes' | 'hours' | 'days'>('minutes');
+  const [schedMaxExec, setSchedMaxExec] = useState('');
+
   // ─── Queries ─────────────────────────────────
 
   const { data: rules, isLoading } = useQuery<AutomationRule[]>({
@@ -254,6 +302,11 @@ export default function AutomationRules() {
   const { data: abTests } = useQuery<ABTest[]>({
     queryKey: ['ab-tests'],
     queryFn: async () => { const res = await api.get('/api/automation/ab-tests'); return res.data.data; },
+  });
+
+  const { data: schedules } = useQuery<CampaignSchedule[]>({
+    queryKey: ['campaign-schedules'],
+    queryFn: async () => { const res = await api.get('/api/automation/schedules'); return res.data.data; },
   });
 
   const { data: campaigns } = useQuery<any[]>({
@@ -324,6 +377,28 @@ export default function AutomationRules() {
     mutationFn: async (id: string) => { await api.patch(`/api/automation/ab-tests/${id}/cancel`); },
     onSuccess: () => { toast.success('Teste cancelado!'); queryClient.invalidateQueries({ queryKey: ['ab-tests'] }); },
     onError: (e: any) => toast.error(e.response?.data?.error || 'Erro'),
+  });
+
+  // Schedule mutations
+  const schedCreateMutation = useMutation({
+    mutationFn: async (data: any) => { const res = await api.post('/api/automation/schedules', data); return res.data.data; },
+    onSuccess: () => {
+      toast.success('Agendamento criado!');
+      queryClient.invalidateQueries({ queryKey: ['campaign-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns-list'] });
+      setSchedDialogOpen(false);
+    },
+    onError: (e: any) => toast.error(e.response?.data?.error || 'Erro ao criar agendamento'),
+  });
+
+  const schedCancelMutation = useMutation({
+    mutationFn: async (id: string) => { await api.delete(`/api/automation/schedules/${id}`); },
+    onSuccess: () => {
+      toast.success('Agendamento cancelado!');
+      queryClient.invalidateQueries({ queryKey: ['campaign-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns-list'] });
+    },
+    onError: (e: any) => toast.error(e.response?.data?.error || 'Erro ao cancelar'),
   });
 
   // ─── Handlers ─────────────────────────────────
@@ -503,6 +578,7 @@ export default function AutomationRules() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="rules">Regras ({rules?.length || 0})</TabsTrigger>
+          <TabsTrigger value="schedules">Agendamentos ({schedules?.length || 0})</TabsTrigger>
           <TabsTrigger value="budget-caps">Limites de Orcamento</TabsTrigger>
           <TabsTrigger value="ab-tests">Testes A/B</TabsTrigger>
         </TabsList>
@@ -576,6 +652,96 @@ export default function AutomationRules() {
               <h3 className="text-lg font-semibold mb-2">Nenhuma regra</h3>
               <p className="text-muted-foreground mb-4">Crie sua primeira regra de automacao</p>
               <Button onClick={handleOpenCreate}><Plus className="h-4 w-4 mr-2" />Criar Regra</Button>
+            </CardContent></Card>
+          )}
+        </TabsContent>
+
+        {/* ═══════════ TAB: AGENDAMENTOS ═══════════ */}
+        <TabsContent value="schedules" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <p className="text-sm text-muted-foreground">Pause e retome campanhas automaticamente por periodos configuraveis</p>
+            <Button onClick={() => {
+              setSchedCampaignId('');
+              setSchedType('once');
+              setSchedPauseDuration('30');
+              setSchedPauseUnit('minutes');
+              setSchedResumeDuration('60');
+              setSchedResumeUnit('minutes');
+              setSchedMaxExec('');
+              setSchedDialogOpen(true);
+            }}>
+              <Plus className="h-4 w-4 mr-2" />Novo Agendamento
+            </Button>
+          </div>
+
+          {schedules && schedules.length > 0 ? (
+            <div className="space-y-3">
+              {schedules.map((sched) => (
+                <Card key={sched.id}>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className={`p-2 rounded-lg ${sched.currentAction === 'paused' ? 'bg-yellow-100' : 'bg-green-100'}`}>
+                          {sched.currentAction === 'paused' ? <Pause className="h-4 w-4 text-yellow-600" /> : <Play className="h-4 w-4 text-green-600" />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{sched.campaign.name}</p>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                            <Badge variant="outline" className="text-xs">
+                              {sched.type === 'recurring' ? 'Recorrente' : 'Unico'}
+                            </Badge>
+                            <span>Pausa: {formatDurationLabel(sched.pauseDuration)}</span>
+                            {sched.type === 'recurring' && sched.resumeDuration && (
+                              <span>Ativo: {formatDurationLabel(sched.resumeDuration)}</span>
+                            )}
+                            {sched.maxExecutions && (
+                              <span>{sched.executionCount}/{sched.maxExecutions} exec.</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right text-xs">
+                          <Badge variant={
+                            sched.status === 'active' ? 'default' :
+                            sched.status === 'paused_waiting' ? 'secondary' :
+                            sched.status === 'completed' ? 'outline' : 'destructive'
+                          }>
+                            {sched.status === 'active' ? 'Ativo' :
+                             sched.status === 'paused_waiting' ? 'Pausado' :
+                             sched.status === 'completed' ? 'Concluido' : sched.status}
+                          </Badge>
+                          {sched.nextActionAt && (
+                            <p className="text-muted-foreground mt-1">
+                              <Clock className="h-3 w-3 inline mr-1" />
+                              {new Date(sched.nextActionAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                            </p>
+                          )}
+                        </div>
+                        {(sched.status === 'active' || sched.status === 'paused_waiting') && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              if (confirm('Cancelar este agendamento?')) {
+                                schedCancelMutation.mutate(sched.id);
+                              }
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card><CardContent className="pt-6 text-center py-10">
+              <Timer className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+              <p className="text-muted-foreground">Nenhum agendamento criado</p>
+              <p className="text-xs text-muted-foreground mt-1">Crie um agendamento para pausar e retomar campanhas automaticamente</p>
             </CardContent></Card>
           )}
         </TabsContent>
@@ -1030,6 +1196,105 @@ export default function AutomationRules() {
               });
             }} disabled={abCreateMutation.isPending}>
               {abCreateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Criar Teste'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══════════ DIALOG: SCHEDULE ═══════════ */}
+      <Dialog open={schedDialogOpen} onOpenChange={setSchedDialogOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Novo Agendamento</DialogTitle>
+            <DialogDescription>Pause e retome campanhas automaticamente</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Campanha</Label>
+              <Select value={schedCampaignId} onValueChange={setSchedCampaignId}>
+                <SelectTrigger><SelectValue placeholder="Selecione uma campanha" /></SelectTrigger>
+                <SelectContent>
+                  {campaigns?.filter((c: any) => c.status === 'ACTIVE').map((c: any) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Tipo</Label>
+              <Select value={schedType} onValueChange={(v) => setSchedType(v as 'once' | 'recurring')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="once">Unico (pausar e retomar uma vez)</SelectItem>
+                  <SelectItem value="recurring">Recorrente (ciclo de pausa/ativo)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Duracao da pausa</Label>
+              <div className="flex gap-2">
+                <Input type="number" min="1" value={schedPauseDuration} onChange={(e) => setSchedPauseDuration(e.target.value)} className="flex-1" />
+                <Select value={schedPauseUnit} onValueChange={(v) => setSchedPauseUnit(v as any)}>
+                  <SelectTrigger className="w-[130px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="minutes">Minutos</SelectItem>
+                    <SelectItem value="hours">Horas</SelectItem>
+                    <SelectItem value="days">Dias</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {schedType === 'recurring' && (
+              <>
+                <div className="space-y-2">
+                  <Label>Duracao ativo (antes de pausar novamente)</Label>
+                  <div className="flex gap-2">
+                    <Input type="number" min="1" value={schedResumeDuration} onChange={(e) => setSchedResumeDuration(e.target.value)} className="flex-1" />
+                    <Select value={schedResumeUnit} onValueChange={(v) => setSchedResumeUnit(v as any)}>
+                      <SelectTrigger className="w-[130px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="minutes">Minutos</SelectItem>
+                        <SelectItem value="hours">Horas</SelectItem>
+                        <SelectItem value="days">Dias</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Max. execucoes (opcional)</Label>
+                  <Input type="number" min="1" placeholder="Infinito" value={schedMaxExec} onChange={(e) => setSchedMaxExec(e.target.value)} />
+                </div>
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSchedDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={() => {
+              if (!schedCampaignId) { toast.error('Selecione uma campanha'); return; }
+              const pauseMin = toMinutes(Number(schedPauseDuration) || 1, schedPauseUnit);
+              if (pauseMin < 1) { toast.error('Duracao minima: 1 minuto'); return; }
+
+              const payload: any = {
+                campaignId: schedCampaignId,
+                type: schedType,
+                pauseDuration: pauseMin,
+              };
+
+              if (schedType === 'recurring') {
+                const resumeMin = toMinutes(Number(schedResumeDuration) || 1, schedResumeUnit);
+                if (resumeMin < 1) { toast.error('Duracao ativo minima: 1 minuto'); return; }
+                payload.resumeDuration = resumeMin;
+                if (schedMaxExec) payload.maxExecutions = Number(schedMaxExec);
+              }
+
+              schedCreateMutation.mutate(payload);
+            }} disabled={schedCreateMutation.isPending}>
+              {schedCreateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Criar Agendamento'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -154,6 +154,50 @@ export class AutomationController {
     }
   }
 
+  // ─── Campaign Schedules ─────────────────────────────────
+
+  async getSchedules(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ success: false, error: 'Not authenticated' });
+      const schedules = await automationService.getSchedules(req.user.userId);
+      res.status(200).json({ success: true, data: schedules });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Get schedules error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  async createSchedule(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ success: false, error: 'Not authenticated' });
+      const schedule = await automationService.createSchedule(req.user.userId, req.body);
+      res.status(201).json({ success: true, data: schedule });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Create schedule error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  async cancelSchedule(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ success: false, error: 'Not authenticated' });
+      const schedule = await automationService.cancelSchedule(req.user.userId, req.params.id);
+      res.status(200).json({ success: true, data: schedule });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Cancel schedule error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
   // ─── Cross-Platform Duplication (F9) ─────────────────────────────────
 
   async duplicateCampaign(req: AuthRequest, res: Response) {

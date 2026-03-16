@@ -30,6 +30,7 @@ import {
   Sun,
   Moon,
   Users,
+  UsersRound,
   Activity,
   GraduationCap,
 } from 'lucide-react';
@@ -147,6 +148,7 @@ export default function AppLayout() {
     { name: 'Biblioteca', href: '/campaign-library', icon: BookOpen },
     { name: 'WhatsApp', href: '/whatsapp', icon: MessageSquare },
     { name: 'Clientes', href: '/clients', icon: Users },
+    { name: 'Públicos', href: '/audiences', icon: UsersRound },
     { name: 'Base de Conhecimento', href: '/knowledge-base', icon: GraduationCap },
     { name: 'API Logs', href: '/api-logs', icon: Activity },
   ];
@@ -400,6 +402,7 @@ export default function AppLayout() {
                 '/campaign-library': 'Biblioteca de Campanhas',
                 '/whatsapp': 'WhatsApp',
                 '/clients': 'Clientes',
+                '/audiences': 'Públicos Personalizados',
                 '/api-logs': 'API Logs',
               } as Record<string, string>)[location.pathname] || 'Painel'}
             </h2>

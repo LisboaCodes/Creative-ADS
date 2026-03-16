@@ -8,6 +8,17 @@ import { googleAdsService } from './integrations/google.service';
 import { tiktokService } from './integrations/tiktok.service';
 import { linkedinService } from './integrations/linkedin.service';
 import type { BasePlatformService } from './integrations/base.service';
+import { whatsAppNotificationsService } from '../whatsapp/whatsapp-notifications.service';
+import { notificationsService } from '../notifications/notifications.service';
+
+// Mapping of Facebook effective_status to human-readable reason
+const billingReasonMap: Record<string, string> = {
+  PENDING_BILLING_INFO: 'Informações de pagamento pendentes',
+  CAMPAIGN_PAUSED: 'Pausada pela plataforma',
+  ADSET_PAUSED: 'Conjunto de anúncios pausado',
+  DISAPPROVED: 'Anúncio reprovado pela plataforma',
+  PENDING_REVIEW: 'Em revisão pela plataforma',
+};
 
 export class PlatformsService {
   private platformServices = new Map<PlatformType, BasePlatformService>([
@@ -783,11 +794,44 @@ export class PlatformsService {
     const locallyDeletedIds = new Set(locallyDeletedCampaigns.map((c) => c.externalId!));
 
     // Upsert campaigns in database (skip locally deleted)
+    // Track status changes for notifications
+    const statusChanges: Array<{
+      campaignName: string;
+      oldStatus: string;
+      newStatus: string;
+      originalStatus?: string;
+      dailyBudget?: number;
+      platformId: string;
+    }> = [];
+
     for (const campaignData of campaigns) {
       // If user deleted this campaign locally, don't re-insert it
       if (locallyDeletedIds.has(campaignData.externalId)) {
         logger.info(`Skipping sync for locally deleted campaign ${campaignData.externalId}`);
         continue;
+      }
+
+      // Check for status changes before upsert
+      const existingCampaign = await prisma.campaign.findUnique({
+        where: {
+          platformId_externalId: {
+            platformId: platform.id,
+            externalId: campaignData.externalId,
+          },
+        },
+        select: { status: true, name: true },
+      });
+
+      // Detect status change (only for existing campaigns)
+      if (existingCampaign && existingCampaign.status !== campaignData.status) {
+        statusChanges.push({
+          campaignName: campaignData.name,
+          oldStatus: existingCampaign.status,
+          newStatus: campaignData.status,
+          originalStatus: campaignData.originalStatus,
+          dailyBudget: campaignData.dailyBudget,
+          platformId: platform.id,
+        });
       }
 
       await prisma.campaign.upsert({
@@ -818,6 +862,32 @@ export class PlatformsService {
           endDate: campaignData.endDate,
         },
       });
+    }
+
+    // Send notifications for billing/platform pauses detected during sync
+    for (const change of statusChanges) {
+      const isBillingPause = change.newStatus === 'PAUSED' && change.originalStatus &&
+        ['PENDING_BILLING_INFO', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED', 'DISAPPROVED', 'PENDING_REVIEW'].includes(change.originalStatus);
+
+      if (isBillingPause) {
+        const reason = billingReasonMap[change.originalStatus!] || 'Pausada automaticamente pela plataforma';
+
+        // WhatsApp notification (fire-and-forget)
+        whatsAppNotificationsService.notifyGroups(platform.userId, 'BILLING_PAUSE', {
+          campaign: { name: change.campaignName, platformId: change.platformId, dailyBudget: change.dailyBudget },
+          metrics: { reason },
+        }).catch(err => logger.warn('WhatsApp billing pause notification failed:', err.message));
+
+        // In-app notification
+        notificationsService.createNotification(platform.userId, {
+          title: 'Campanha pausada pela plataforma',
+          message: `A campanha "${change.campaignName}" foi pausada. Motivo: ${reason}`,
+          type: 'WARNING',
+          metadata: { campaignName: change.campaignName, reason, originalStatus: change.originalStatus },
+        }).catch(err => logger.warn('In-app billing pause notification failed:', err.message));
+
+        logger.info(`Billing pause detected for campaign "${change.campaignName}": ${change.originalStatus}`);
+      }
     }
 
     // Archive campaigns that no longer exist on the platform

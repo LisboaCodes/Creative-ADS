@@ -10,6 +10,7 @@ import './jobs/check-alerts.job';
 import './jobs/clean-old-metrics.job';
 import './jobs/whatsapp-daily-summary.job';
 import './jobs/scheduled-reports.job';
+import './jobs/scheduled-pause.job';
 
 const app = createApp();
 

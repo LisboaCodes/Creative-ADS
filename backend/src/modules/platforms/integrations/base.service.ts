@@ -19,6 +19,7 @@ export interface CampaignData {
   externalId: string;
   name: string;
   status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED' | 'DELETED';
+  originalStatus?: string; // Platform-specific status before mapping (e.g. effective_status)
   dailyBudget?: number;
   lifetimeBudget?: number;
   currency: string;
@@ -89,6 +90,7 @@ export interface CreateAdSetInput {
     ageMax?: number;
     genders?: number[];
     interests?: Array<{ id: string; name: string }>;
+    customAudiences?: Array<{ id: string }>;
   };
   billingEvent?: string;
   optimizationGoal?: string;

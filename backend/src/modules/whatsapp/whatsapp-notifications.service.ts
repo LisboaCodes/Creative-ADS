@@ -9,7 +9,10 @@ type EventType =
   | 'AUTOMATION_TRIGGERED'
   | 'PERFORMANCE_ALERT'
   | 'DAILY_SUMMARY'
-  | 'REPORT_GENERATED';
+  | 'REPORT_GENERATED'
+  | 'BILLING_PAUSE'
+  | 'SCHEDULED_PAUSE'
+  | 'SCHEDULED_RESUME';
 
 const statusLabels: Record<string, string> = {
   ACTIVE: 'Ativa ✅',
@@ -173,6 +176,46 @@ export class WhatsAppNotificationsService {
       ``,
       `Executada em ${formatDate()} às ${formatTime()}`,
     ].join('\n');
+  }
+
+  formatBillingPause(campaignName: string, reason: string, dailyBudget?: number | null): string {
+    const lines = [
+      `⚠️ *Campanha Pausada pela Plataforma*`,
+      ``,
+      `Campanha: *${campaignName}*`,
+      `Motivo: ${reason}`,
+    ];
+
+    if (dailyBudget) {
+      lines.push(`Orçamento diário: ${formatCurrency(dailyBudget)}`);
+    }
+
+    lines.push(``);
+    lines.push(`💡 Verifique o método de pagamento na conta de anúncios.`);
+    lines.push(``);
+    lines.push(`_Detectado em ${formatDate()} às ${formatTime()}_`);
+
+    return lines.join('\n');
+  }
+
+  formatScheduledAction(campaignName: string, action: 'paused' | 'resumed', nextAction?: string): string {
+    const emoji = action === 'paused' ? '⏸️' : '▶️';
+    const label = action === 'paused' ? 'Pausada' : 'Retomada';
+
+    const lines = [
+      `${emoji} *Campanha ${label} (Agendamento)*`,
+      ``,
+      `Campanha: *${campaignName}*`,
+    ];
+
+    if (nextAction) {
+      lines.push(`Próxima ação: ${nextAction}`);
+    }
+
+    lines.push(``);
+    lines.push(`_Executado em ${formatDate()} às ${formatTime()}_`);
+
+    return lines.join('\n');
   }
 
   formatCampaignUpdate(
@@ -430,6 +473,21 @@ export class WhatsAppNotificationsService {
             ].filter(Boolean).join('\n');
           }
           break;
+
+        case 'BILLING_PAUSE':
+          if (!data.campaign || !data.metrics?.reason) break;
+          message = this.formatBillingPause(data.campaign.name, data.metrics.reason, data.campaign.dailyBudget);
+          break;
+
+        case 'SCHEDULED_PAUSE':
+          if (!data.campaign) break;
+          message = this.formatScheduledAction(data.campaign.name, 'paused', data.metrics?.nextAction);
+          break;
+
+        case 'SCHEDULED_RESUME':
+          if (!data.campaign) break;
+          message = this.formatScheduledAction(data.campaign.name, 'resumed', data.metrics?.nextAction);
+          break;
       }
 
       if (!message) return;
@@ -443,6 +501,9 @@ export class WhatsAppNotificationsService {
         PERFORMANCE_ALERT: 'notifyPerformance',
         DAILY_SUMMARY: 'notifyDailySummary',
         REPORT_GENERATED: 'notifyDailySummary',
+        BILLING_PAUSE: 'notifyStatusChange',
+        SCHEDULED_PAUSE: 'notifyStatusChange',
+        SCHEDULED_RESUME: 'notifyStatusChange',
       };
 
       const field = notifField[eventType];
