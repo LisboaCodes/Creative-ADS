@@ -33,8 +33,8 @@ const tokenChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChan
 if (tokenChannel) {
   tokenChannel.onmessage = (event) => {
     if (event.data.type === 'TOKEN_REFRESHED') {
-      localStorage.setItem('accessToken', event.data.accessToken);
-      localStorage.setItem('refreshToken', event.data.refreshToken);
+      // Sync both localStorage and Zustand store
+      useAuthStore.getState().updateTokens(event.data.accessToken, event.data.refreshToken);
       processQueue(null, event.data.accessToken);
       isRefreshing = false;
     } else if (event.data.type === 'TOKEN_REFRESH_FAILED') {
@@ -74,6 +74,83 @@ function shouldRetry(error: any): boolean {
     return true;
   }
   return false;
+}
+
+// Proactive token refresh - refresh 2 minutes before expiry
+function getTokenExpiry(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+let proactiveRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleProactiveRefresh() {
+  if (proactiveRefreshTimer) {
+    clearTimeout(proactiveRefreshTimer);
+    proactiveRefreshTimer = null;
+  }
+
+  const token = localStorage.getItem('accessToken');
+  if (!token) return;
+
+  const expiry = getTokenExpiry(token);
+  if (!expiry) return;
+
+  // Refresh 2 minutes before expiry
+  const refreshAt = expiry - Date.now() - 2 * 60 * 1000;
+
+  if (refreshAt <= 0) {
+    // Token already expired or about to - refresh now
+    doProactiveRefresh();
+    return;
+  }
+
+  proactiveRefreshTimer = setTimeout(() => {
+    doProactiveRefresh();
+  }, refreshAt);
+}
+
+async function doProactiveRefresh() {
+  if (isRefreshing) return;
+
+  const refreshToken = localStorage.getItem('refreshToken');
+  if (!refreshToken) return;
+
+  try {
+    isRefreshing = true;
+    const baseURL = import.meta.env.VITE_API_URL || '';
+    const response = await axios.post(`${baseURL}/api/auth/refresh`, { refreshToken });
+    const { accessToken, refreshToken: newRefreshToken } = response.data.data;
+
+    // Update both localStorage and Zustand store
+    useAuthStore.getState().updateTokens(accessToken, newRefreshToken);
+
+    // Notify other tabs
+    tokenChannel?.postMessage({ type: 'TOKEN_REFRESHED', accessToken, refreshToken: newRefreshToken });
+
+    // Schedule next proactive refresh
+    scheduleProactiveRefresh();
+  } catch {
+    // Proactive refresh failed - will handle on next 401
+  } finally {
+    isRefreshing = false;
+  }
+}
+
+// Start proactive refresh on load
+scheduleProactiveRefresh();
+
+// Re-schedule when tokens change (listen to storage events from other tabs)
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'accessToken' && event.newValue) {
+      scheduleProactiveRefresh();
+    }
+  });
 }
 
 api.interceptors.response.use(
@@ -118,11 +195,14 @@ api.interceptors.response.use(
 
         const { accessToken, refreshToken: newRefreshToken } = response.data.data;
 
-        localStorage.setItem('accessToken', accessToken);
-        localStorage.setItem('refreshToken', newRefreshToken);
+        // Update both localStorage and Zustand store
+        useAuthStore.getState().updateTokens(accessToken, newRefreshToken);
 
         // Notify other tabs
         tokenChannel?.postMessage({ type: 'TOKEN_REFRESHED', accessToken, refreshToken: newRefreshToken });
+
+        // Schedule next proactive refresh
+        scheduleProactiveRefresh();
 
         processQueue(null, accessToken);
 
