@@ -311,7 +311,7 @@ export default function AutomationRules() {
 
   const { data: campaigns } = useQuery<any[]>({
     queryKey: ['campaigns-list'],
-    queryFn: async () => { const res = await api.get('/api/campaigns'); return res.data.data; },
+    queryFn: async () => { const res = await api.get('/api/campaigns?limit=500'); return res.data.data?.campaigns || res.data.data || []; },
   });
 
   // ─── Mutations ─────────────────────────────────
