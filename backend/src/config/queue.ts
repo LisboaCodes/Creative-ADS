@@ -100,6 +100,19 @@ export const whatsappDailySummaryQueue = new Queue('whatsapp-daily-summary', {
   },
 });
 
+export const processClickQueue = new Queue('process-click', {
+  redis: redisConfig,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 2000,
+    },
+    removeOnComplete: true,
+    removeOnFail: false,
+  },
+});
+
 // Queue event listeners
 const setupQueueListeners = (queue: Queue.Queue, name: string) => {
   queue.on('completed', (job) => {
@@ -129,6 +142,7 @@ setupQueueListeners(generateReportsQueue, 'generate-reports');
 setupQueueListeners(cleanOldMetricsQueue, 'clean-old-metrics');
 setupQueueListeners(scheduledPauseQueue, 'scheduled-pause');
 setupQueueListeners(whatsappDailySummaryQueue, 'whatsapp-daily-summary');
+setupQueueListeners(processClickQueue, 'process-click');
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
@@ -141,6 +155,7 @@ process.on('SIGTERM', async () => {
     cleanOldMetricsQueue.close(),
     scheduledPauseQueue.close(),
     whatsappDailySummaryQueue.close(),
+    processClickQueue.close(),
   ]);
   logger.info('✅ Queues closed');
 });
@@ -153,4 +168,5 @@ export const queues = {
   cleanOldMetrics: cleanOldMetricsQueue,
   scheduledPause: scheduledPauseQueue,
   whatsappDailySummary: whatsappDailySummaryQueue,
+  processClick: processClickQueue,
 };

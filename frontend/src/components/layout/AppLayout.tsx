@@ -33,6 +33,7 @@ import {
   UsersRound,
   Activity,
   GraduationCap,
+  Target,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -145,6 +146,7 @@ export default function AppLayout() {
     { name: 'Diagnosticos', href: '/diagnostics', icon: Stethoscope },
     { name: 'Relatorios', href: '/reports', icon: FileText },
     { name: 'Financeiro', href: '/financial', icon: Wallet },
+    { name: 'Leads', href: '/leads', icon: Target },
     { name: 'Biblioteca', href: '/campaign-library', icon: BookOpen },
     { name: 'WhatsApp', href: '/whatsapp', icon: MessageSquare },
     { name: 'Clientes', href: '/clients', icon: Users },
@@ -404,6 +406,7 @@ export default function AppLayout() {
                 '/clients': 'Clientes',
                 '/audiences': 'Públicos Personalizados',
                 '/api-logs': 'API Logs',
+                '/leads': 'Leads',
               } as Record<string, string>)[location.pathname] || 'Painel'}
             </h2>
           </div>

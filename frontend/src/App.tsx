@@ -25,6 +25,7 @@ import Clients from './pages/Clients';
 import ApiLogs from './pages/ApiLogs';
 import KnowledgeBase from './pages/KnowledgeBase';
 import Audiences from './pages/Audiences';
+import Leads from './pages/Leads';
 
 // Layout
 import AppLayout from './components/layout/AppLayout';
@@ -128,6 +129,7 @@ function App() {
             <Route path="api-logs" element={<ErrorBoundary><ApiLogs /></ErrorBoundary>} />
             <Route path="audiences" element={<ErrorBoundary><Audiences /></ErrorBoundary>} />
             <Route path="knowledge-base" element={<ErrorBoundary><KnowledgeBase /></ErrorBoundary>} />
+            <Route path="leads" element={<ErrorBoundary><Leads /></ErrorBoundary>} />
           </Route>
 
           {/* Logout */}

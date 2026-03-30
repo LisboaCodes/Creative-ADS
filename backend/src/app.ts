@@ -25,6 +25,9 @@ import whatsappRoutes from './modules/whatsapp/whatsapp.routes';
 import clientsRoutes from './modules/clients/clients.routes';
 import apiLogsRoutes from './modules/api-logs/api-logs.routes';
 import audiencesRoutes from './modules/audiences/audiences.routes';
+import trackingRoutes from './modules/tracking/tracking.routes';
+import { trackingController } from './modules/tracking/tracking.controller';
+import { redirectLimiter } from './middleware/rate-limit.middleware';
 
 // Swagger configuration
 const swaggerOptions = {
@@ -95,6 +98,10 @@ export function createApp(): Application {
   app.use('/api/clients', clientsRoutes);
   app.use('/api/api-logs', apiLogsRoutes);
   app.use('/api/audiences', audiencesRoutes);
+  app.use('/api/tracking', trackingRoutes);
+
+  // Public tracking redirect (before error handlers)
+  app.get('/t/:shortCode', redirectLimiter, (req, res) => trackingController.handleRedirect(req, res));
 
   // Swagger documentation
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));

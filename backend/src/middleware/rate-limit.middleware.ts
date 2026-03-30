@@ -43,3 +43,22 @@ export const userLimiter = rateLimit({
   legacyHeaders: false,
   skip: (req) => !((req as any).user), // Only apply to authenticated users
 });
+
+export const trackingWebhookLimiter = rateLimit({
+  windowMs: 60_000,
+  max: isDev ? 500 : 30,
+  message: {
+    success: false,
+    error: 'Rate limit exceeded',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+export const redirectLimiter = rateLimit({
+  windowMs: 60_000,
+  max: isDev ? 1000 : 120,
+  message: 'Too many requests',
+  standardHeaders: true,
+  legacyHeaders: false,
+});

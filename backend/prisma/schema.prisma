@@ -19,6 +19,27 @@ enum UserRole {
   CLIENT
 }
 
+enum LeadSource {
+  FACEBOOK
+  GOOGLE
+  INSTAGRAM
+  TIKTOK
+  LINKEDIN
+  ORGANIC
+  DIRECT
+  WHATSAPP
+  REFERRAL
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  SOLD
+  LOST
+}
+
 enum PlatformType {
   FACEBOOK
   INSTAGRAM
@@ -85,6 +106,9 @@ model User {
   abTests           ABTest[]
   audiences         Audience[]
   campaignSchedules CampaignSchedule[]
+  trackingLinks     TrackingLink[]
+  leads             Lead[]
+  trackingApiKey    String?          @unique
 
   @@index([email])
   @@map("users")
@@ -142,6 +166,8 @@ model Platform {
   audiences       Audience[]
   clientId        String?
   client          Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  trackingLinks   TrackingLink[]
+  leads           Lead[]
 
   @@unique([userId, type, externalId])
   @@index([userId])
@@ -183,6 +209,8 @@ model Campaign {
   adSets          AdSet[]
   tags            CampaignTag[]
   schedules       CampaignSchedule[]
+  trackingLinks   TrackingLink[]
+  leads           Lead[]
 
   @@unique([platformId, externalId])
   @@index([platformId])
@@ -773,6 +801,7 @@ model Client {
 
   platforms      Platform[]
   whatsappGroups WhatsAppGroup[]
+  leads          Lead[]
 
   @@index([userId])
   @@map("clients")
@@ -824,4 +853,113 @@ model CampaignSchedule {
   @@index([userId])
   @@index([status])
   @@map("campaign_schedules")
+}
+
+// ─── Lead Tracking ─────────────
+
+model TrackingLink {
+  id              String    @id @default(cuid())
+  shortCode       String    @unique
+  name            String
+  destinationUrl  String
+
+  // UTM Parameters
+  utmSource       String?
+  utmMedium       String?
+  utmCampaign     String?
+  utmContent      String?
+  utmTerm         String?
+
+  // Custom parameters (ad_id, adset_id, etc)
+  customParams    Json?
+
+  // Denormalized counters
+  totalClicks     Int       @default(0)
+  uniqueClicks    Int       @default(0)
+
+  isActive        Boolean   @default(true)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaignId      String?
+  campaign        Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  platformId      String?
+  platform        Platform? @relation(fields: [platformId], references: [id], onDelete: SetNull)
+  clicks          Click[]
+  leads           Lead[]
+
+  @@index([shortCode])
+  @@index([userId])
+  @@index([campaignId])
+  @@map("tracking_links")
+}
+
+model Click {
+  id              String       @id @default(cuid())
+  ipAddress       String?
+  userAgent       String?
+  referer         String?
+  fingerprint     String?      // hash(ip + userAgent)
+
+  createdAt       DateTime     @default(now())
+
+  // Relations
+  trackingLinkId  String
+  trackingLink    TrackingLink @relation(fields: [trackingLinkId], references: [id], onDelete: Cascade)
+
+  @@index([trackingLinkId])
+  @@index([createdAt])
+  @@index([trackingLinkId, fingerprint])
+  @@map("clicks")
+}
+
+model Lead {
+  id              String      @id @default(cuid())
+  name            String?
+  phone           String?
+  email           String?
+
+  source          LeadSource  @default(OTHER)
+  status          LeadStatus  @default(NEW)
+  value           Float?
+
+  // UTM Parameters (captured at lead creation)
+  utmSource       String?
+  utmMedium       String?
+  utmCampaign     String?
+  utmContent      String?
+  utmTerm         String?
+
+  // Preparation for future WhatsApp module
+  whatsappConversationId String?
+
+  metadata        Json?
+  notes           String?     @db.Text
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Relations
+  userId          String
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trackingLinkId  String?
+  trackingLink    TrackingLink? @relation(fields: [trackingLinkId], references: [id], onDelete: SetNull)
+  campaignId      String?
+  campaign        Campaign?   @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  platformId      String?
+  platform        Platform?   @relation(fields: [platformId], references: [id], onDelete: SetNull)
+  clientId        String?
+  client          Client?     @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+  @@index([source])
+  @@index([createdAt])
+  @@index([campaignId])
+  @@index([phone])
+  @@map("leads")
 }

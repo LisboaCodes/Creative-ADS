@@ -11,6 +11,7 @@ import './jobs/clean-old-metrics.job';
 import './jobs/whatsapp-daily-summary.job';
 import './jobs/scheduled-reports.job';
 import './jobs/scheduled-pause.job';
+import './jobs/process-click.job';
 
 const app = createApp();
 
