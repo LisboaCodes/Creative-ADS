@@ -371,8 +371,27 @@ export class WhatsAppNotificationsService {
     });
 
     if (groups.length === 0) {
-      const platformName = campaign.platform?.name || campaign.platformId;
-      throw new Error(`Nenhum grupo de WhatsApp vinculado à conta "${platformName}". Vá em WhatsApp > Editar grupo e vincule esta conta.`);
+      const platformName = campaign.platform?.name || 'Sem nome';
+      const platformExtId = campaign.platform?.externalId || '';
+      const platformType = campaign.platform?.type || '';
+
+      // Fetch existing groups to help user identify the issue
+      const existingGroups = await prisma.whatsAppGroup.findMany({
+        where: { userId, isActive: true },
+        select: { groupName: true, platformIds: true },
+      });
+
+      let hint = '';
+      if (existingGroups.length === 0) {
+        hint = 'Você ainda não tem nenhum grupo de WhatsApp cadastrado. Vá em WhatsApp e cadastre um grupo.';
+      } else {
+        const groupNames = existingGroups.map(g => g.groupName).join(', ');
+        hint = `Grupos existentes: ${groupNames}. Vá em WhatsApp > Editar grupo e adicione a conta "${platformName}" na lista de contas vinculadas.`;
+      }
+
+      throw new Error(
+        `A conta de anúncio "${platformName}" (${platformType}${platformExtId ? `, ID: ${platformExtId}` : ''}) não está vinculada a nenhum grupo de WhatsApp. ${hint}`
+      );
     }
 
     const sentTo: string[] = [];

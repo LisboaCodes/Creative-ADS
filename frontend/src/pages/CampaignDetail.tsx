@@ -158,7 +158,8 @@ export default function CampaignDetail() {
       const data = res.data.data;
       toast.success(`Atualização enviada para ${data.groups.join(', ')}`);
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Falha ao enviar atualização');
+      const msg = error.response?.data?.error || 'Falha ao enviar atualização';
+      toast.error(msg, { duration: 8000 });
     } finally {
       setSendingUpdate(false);
     }
