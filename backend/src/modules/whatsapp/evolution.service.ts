@@ -63,16 +63,22 @@ export class EvolutionService {
     }
 
     try {
-      await axios.get(
-        `${this.baseUrl}/group/fetchAllGroups/${this.instance}`,
+      const response = await axios.get(
+        `${this.baseUrl}/instance/connectionState/${this.instance}`,
         {
-          params: { getParticipants: false },
           headers: { apikey: this.apiKey },
-          timeout: 5000,
+          timeout: 15000,
         }
       );
-      return { connected: true, instance: this.instance };
-    } catch {
+
+      // Evolution API v2 returns { instance: { state: "open" } } when connected
+      const state = response.data?.instance?.state || response.data?.state;
+      const connected = state === 'open' || state === 'connected';
+
+      logger.info(`WhatsApp connection check: state=${state}, connected=${connected}`);
+      return { connected, instance: this.instance };
+    } catch (error: any) {
+      logger.error('WhatsApp connection check failed:', error.message);
       return { connected: false, instance: this.instance };
     }
   }
