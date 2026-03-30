@@ -10,6 +10,7 @@ import { linkedinService } from './integrations/linkedin.service';
 import type { BasePlatformService } from './integrations/base.service';
 import { whatsAppNotificationsService } from '../whatsapp/whatsapp-notifications.service';
 import { notificationsService } from '../notifications/notifications.service';
+import { cache } from '../../config/redis';
 
 // Mapping of Facebook effective_status to human-readable reason
 const billingReasonMap: Record<string, string> = {
@@ -364,6 +365,88 @@ export class PlatformsService {
       pages,
       pixels,
     };
+  }
+
+  /**
+   * Get billing/financial data for all ad accounts in a BM
+   */
+  async getBMBilling(userId: string, bmId: string) {
+    // Check cache first
+    const cacheKey = `billing:bm:${userId}:${bmId}`;
+    const cached = await cache.get<any>(cacheKey);
+    if (cached) return cached;
+
+    // Find login with this BM (same pattern as getBMDetail)
+    const logins = await prisma.platformLogin.findMany({
+      where: { userId },
+    });
+
+    let accessToken: string | null = null;
+
+    for (const login of logins) {
+      const metadata = (login.platformMetadata as any) || {};
+      const bms = metadata.businessManagers || [];
+      if (bms.some((bm: any) => bm.id === bmId)) {
+        try {
+          accessToken = decrypt(login.accessToken);
+          break;
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    if (!accessToken) {
+      throw new NotFoundError('Business Manager não encontrado ou sem acesso');
+    }
+
+    // Get ad accounts for this BM
+    const adAccounts = await facebookService.getBMAdAccounts(accessToken, bmId);
+
+    // Fetch billing for each account (concurrency limited to 5)
+    const CONCURRENCY = 5;
+    const billingResults: any[] = [];
+
+    for (let i = 0; i < adAccounts.length; i += CONCURRENCY) {
+      const batch = adAccounts.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map((acc) => facebookService.getAdAccountBilling(accessToken!, acc.id))
+      );
+      billingResults.push(...results);
+    }
+
+    // Calculate aggregates
+    let totalBalance = 0;
+    let totalDailySpend = 0;
+    let totalAmountSpent = 0;
+    let totalPrepaidCredit = 0;
+
+    for (const b of billingResults) {
+      totalBalance += b.balance;
+      totalDailySpend += b.dailySpendToday;
+      totalAmountSpent += b.amountSpent;
+      if (b.isPrepayAccount && b.balance > 0) {
+        totalPrepaidCredit += b.balance;
+      }
+    }
+
+    const result = {
+      bmId,
+      accounts: billingResults,
+      summary: {
+        totalBalance,
+        totalDailySpend,
+        totalAmountSpent,
+        totalPrepaidCredit,
+        currency: billingResults[0]?.currency || 'BRL',
+        accountCount: billingResults.length,
+      },
+    };
+
+    // Cache for 5 minutes
+    await cache.set(cacheKey, result, 300);
+
+    return result;
   }
 
   /**

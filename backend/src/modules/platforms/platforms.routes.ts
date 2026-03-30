@@ -34,6 +34,11 @@ router.post('/sync-all', authenticate, (req, res) =>
 
 // --- Business Manager ---
 
+// Get BM billing/financial data (more specific path first)
+router.get('/bm/:bmId/billing', authenticate, (req, res) =>
+  platformsController.getBMBilling(req, res)
+);
+
 // Get BM detail (ad accounts, pages, pixels)
 router.get('/bm/:bmId', authenticate, (req, res) =>
   platformsController.getBMDetail(req, res)

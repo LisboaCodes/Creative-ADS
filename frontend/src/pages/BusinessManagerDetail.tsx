@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { formatCurrency } from '../lib/utils';
 import {
   ArrowLeft,
   FolderOpen,
@@ -11,12 +12,44 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  DollarSign,
+  CreditCard,
+  TrendingDown,
+  Wallet,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Skeleton } from '../components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+
+interface AdAccountBilling {
+  accountId: string;
+  accountName: string;
+  balance: number;
+  amountSpent: number;
+  spendCap: number;
+  isPrepayAccount: boolean;
+  fundingSourceType: string | null;
+  dailySpendToday: number;
+  currency: string;
+  accountStatus: number;
+}
+
+interface BMBilling {
+  bmId: string;
+  accounts: AdAccountBilling[];
+  summary: {
+    totalBalance: number;
+    totalDailySpend: number;
+    totalAmountSpent: number;
+    totalPrepaidCredit: number;
+    currency: string;
+    accountCount: number;
+  };
+}
 
 interface BMDetail {
   id: string;
@@ -59,6 +92,7 @@ function formatTimeAgo(dateStr: string): string {
 export default function BusinessManagerDetail() {
   const { bmId } = useParams<{ bmId: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data: bm, isLoading, error } = useQuery<BMDetail>({
     queryKey: ['bm-detail', bmId],
@@ -67,6 +101,16 @@ export default function BusinessManagerDetail() {
       return response.data.data;
     },
     enabled: !!bmId,
+  });
+
+  const { data: billing, isLoading: billingLoading, isFetching: billingFetching } = useQuery<BMBilling>({
+    queryKey: ['bm-billing', bmId],
+    queryFn: async () => {
+      const response = await api.get(`/api/platforms/bm/${bmId}/billing`);
+      return response.data.data;
+    },
+    enabled: !!bmId,
+    staleTime: 5 * 60 * 1000,
   });
 
   if (isLoading) {
@@ -163,6 +207,10 @@ export default function BusinessManagerDetail() {
           </TabsTrigger>
           <TabsTrigger value="pixels">
             Pixels ({bm.pixels.length})
+          </TabsTrigger>
+          <TabsTrigger value="billing">
+            <DollarSign className="h-4 w-4 mr-1" />
+            Financeiro
           </TabsTrigger>
         </TabsList>
 
@@ -313,6 +361,176 @@ export default function BusinessManagerDetail() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Financeiro Tab */}
+        <TabsContent value="billing">
+          {billingLoading ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="h-24 w-full" />
+                ))}
+              </div>
+              <Skeleton className="h-40 w-full" />
+            </div>
+          ) : billing ? (
+            <div className="space-y-4">
+              {/* Summary cards */}
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  {billing.summary.accountCount} conta(s) de anuncio
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={billingFetching}
+                  onClick={() =>
+                    queryClient.invalidateQueries({ queryKey: ['bm-billing', bmId] })
+                  }
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 mr-1 ${billingFetching ? 'animate-spin' : ''}`}
+                  />
+                  Atualizar
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card>
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="bg-red-100 rounded-lg p-2">
+                      <TrendingDown className="h-5 w-5 text-red-600" />
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold">
+                        {formatCurrency(billing.summary.totalBalance, billing.summary.currency)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">Divida Atual</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="bg-blue-100 rounded-lg p-2">
+                      <DollarSign className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold">
+                        {formatCurrency(billing.summary.totalDailySpend, billing.summary.currency)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">Gasto Hoje</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="bg-green-100 rounded-lg p-2">
+                      <Wallet className="h-5 w-5 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold">
+                        {formatCurrency(billing.summary.totalPrepaidCredit, billing.summary.currency)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">Credito Disponivel</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="bg-purple-100 rounded-lg p-2">
+                      <CreditCard className="h-5 w-5 text-purple-600" />
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold">
+                        {formatCurrency(billing.summary.totalAmountSpent, billing.summary.currency)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">Total Gasto</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Per-account list */}
+              <Card>
+                <CardContent className="p-0">
+                  {billing.accounts.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      Nenhuma conta de anuncio encontrada.
+                    </div>
+                  ) : (
+                    <div className="divide-y">
+                      {billing.accounts.map((acc) => (
+                        <div
+                          key={acc.accountId}
+                          className="flex items-center justify-between px-4 py-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={`w-2 h-2 rounded-full ${
+                                acc.accountStatus === 1 ? 'bg-green-500' : 'bg-gray-400'
+                              }`}
+                            />
+                            <div>
+                              <p className="font-medium text-sm">{acc.accountName}</p>
+                              <p className="text-xs text-muted-foreground">{acc.accountId}</p>
+                            </div>
+                            <Badge
+                              variant={acc.isPrepayAccount ? 'default' : 'secondary'}
+                              className="text-xs"
+                            >
+                              {acc.isPrepayAccount ? 'Pre-pago' : 'Pos-pago'}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm">
+                            <div className="text-right">
+                              <p className="font-medium">
+                                {formatCurrency(acc.balance, acc.currency)}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {acc.isPrepayAccount ? 'Saldo' : 'Divida'}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-medium">
+                                {formatCurrency(acc.dailySpendToday, acc.currency)}
+                              </p>
+                              <p className="text-xs text-muted-foreground">Gasto Hoje</p>
+                            </div>
+                            {acc.spendCap > 0 && (
+                              <div className="text-right">
+                                <p className="font-medium">
+                                  {formatCurrency(acc.spendCap, acc.currency)}
+                                </p>
+                                <p className="text-xs text-muted-foreground">Limite</p>
+                              </div>
+                            )}
+                            {acc.fundingSourceType && (
+                              <div className="text-right">
+                                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <CreditCard className="h-3 w-3" />
+                                  {acc.fundingSourceType}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-6 text-center">
+                <AlertTriangle className="h-8 w-8 text-yellow-500 mx-auto mb-2" />
+                <p className="text-muted-foreground">
+                  Nao foi possivel carregar os dados financeiros.
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

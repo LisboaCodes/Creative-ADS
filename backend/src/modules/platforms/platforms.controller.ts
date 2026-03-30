@@ -132,6 +132,31 @@ export class PlatformsController {
   }
 
   /**
+   * GET /api/platforms/bm/:bmId/billing
+   */
+  async getBMBilling(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const { bmId } = req.params;
+      const result = await platformsService.getBMBilling(req.user.userId, bmId);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Get BM billing error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  /**
    * GET /api/platforms/:type/connect
    */
   async getAuthUrl(req: AuthRequest, res: Response) {

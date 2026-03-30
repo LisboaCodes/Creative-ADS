@@ -1321,6 +1321,73 @@ export class FacebookService extends BasePlatformService {
   }
 
   /**
+   * Get billing/financial data for a single ad account
+   */
+  async getAdAccountBilling(
+    accessToken: string,
+    adAccountId: string
+  ): Promise<{
+    accountId: string;
+    accountName: string;
+    balance: number;
+    amountSpent: number;
+    spendCap: number;
+    isPrepayAccount: boolean;
+    fundingSourceType: string | null;
+    dailySpendToday: number;
+    currency: string;
+    accountStatus: number;
+  }> {
+    try {
+      const [accountRes, insightsRes] = await Promise.all([
+        axios.get(`${FACEBOOK_GRAPH_API}/${adAccountId}`, {
+          params: {
+            access_token: accessToken,
+            fields: 'name,balance,amount_spent,spend_cap,currency,account_status,funding_source_details,is_prepay_account',
+          },
+        }),
+        axios.get(`${FACEBOOK_GRAPH_API}/${adAccountId}/insights`, {
+          params: {
+            access_token: accessToken,
+            fields: 'spend',
+            date_preset: 'today',
+          },
+        }).catch(() => ({ data: { data: [] } })),
+      ]);
+
+      const acc = accountRes.data;
+      const todayInsight = insightsRes.data.data?.[0];
+
+      return {
+        accountId: adAccountId,
+        accountName: acc.name || adAccountId,
+        balance: (Number(acc.balance) || 0) / 100,
+        amountSpent: (Number(acc.amount_spent) || 0) / 100,
+        spendCap: (Number(acc.spend_cap) || 0) / 100,
+        isPrepayAccount: !!acc.is_prepay_account,
+        fundingSourceType: acc.funding_source_details?.display_string || acc.funding_source_details?.type?.toString() || null,
+        dailySpendToday: Number(todayInsight?.spend) || 0,
+        currency: acc.currency || 'USD',
+        accountStatus: acc.account_status || 0,
+      };
+    } catch (error: any) {
+      logger.warn(`Failed to fetch billing for ${adAccountId}: ${error.response?.data?.error?.message || error.message}`);
+      return {
+        accountId: adAccountId,
+        accountName: adAccountId,
+        balance: 0,
+        amountSpent: 0,
+        spendCap: 0,
+        isPrepayAccount: false,
+        fundingSourceType: null,
+        dailySpendToday: 0,
+        currency: 'USD',
+        accountStatus: 0,
+      };
+    }
+  }
+
+  /**
    * Helper: Map Facebook status to our status
    */
   private mapFacebookStatus(fbStatus: string): 'ACTIVE' | 'PAUSED' | 'ARCHIVED' | 'DELETED' {
