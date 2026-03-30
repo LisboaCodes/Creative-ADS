@@ -4,7 +4,7 @@ import { env } from '../../config/env';
 import { IAIProvider } from './providers/base.provider';
 import { ClaudeProvider } from './providers/claude.provider';
 import { OpenAIProvider } from './providers/openai.provider';
-import { buildSystemPrompt, buildCampaignFocusContext, buildClientBriefingPrompt } from './ai.prompts';
+import { buildSystemPrompt, buildCampaignFocusContext, buildClientBriefingPrompt, buildAutomationSuggestPrompt } from './ai.prompts';
 import { campaignsService } from '../campaigns/campaigns.service';
 import { logger } from '../../utils/logger';
 import { NotFoundError, ServiceUnavailableError } from '../../utils/errors';
@@ -460,6 +460,101 @@ export class AIService {
       content: response.content,
       platformName: platform.name,
       campaignCount: campaignsData.length,
+    };
+  }
+
+  /**
+   * Suggest automation rules using AI based on campaign data
+   */
+  async suggestAutomationRules(userId: string) {
+    const provider = this.getProvider();
+    const context = await this.getCachedContext(userId);
+
+    // Get existing rules
+    const existingRules = await prisma.automationRule.findMany({
+      where: { userId, status: { not: 'DELETED' } },
+      select: { name: true, ruleType: true, metric: true, operator: true, value: true, actionType: true },
+    });
+
+    // Enrich campaigns with CPM
+    const campaigns = context.activeCampaignsWithMetrics.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      status: c.status,
+      platformType: c.platformType,
+      dailyBudget: c.dailyBudget,
+      spend: c.totalSpend,
+      clicks: c.totalClicks,
+      impressions: c.totalImpressions,
+      conversions: c.totalConversions,
+      revenue: c.totalRevenue,
+      ctr: c.avgCtr,
+      cpc: c.avgCpc,
+      cpm: c.totalImpressions > 0 ? (c.totalSpend / c.totalImpressions) * 1000 : 0,
+      roas: c.avgRoas,
+    }));
+
+    const prompt = buildAutomationSuggestPrompt({
+      campaigns,
+      existingRules: existingRules.map((r) => ({
+        name: r.name,
+        ruleType: r.ruleType,
+        metric: r.metric,
+        operator: r.operator,
+        value: r.value,
+        actionType: r.actionType,
+      })),
+      metricsOverview: context.metricsOverview,
+    });
+
+    const response = await provider.chat(
+      [{ role: 'user', content: prompt }],
+      'Voce e um especialista em automacao de trafego pago. Retorne APENAS JSON array puro.'
+    );
+
+    // Parse JSON from response
+    let suggestions: any[] = [];
+    try {
+      const jsonMatch = response.content.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        suggestions = JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      logger.error('Failed to parse AI suggestions JSON:', e);
+      suggestions = [];
+    }
+
+    // Validate and sanitize
+    const validMetrics = ['ctr', 'cpc', 'cpm', 'roas', 'spend', 'conversions'];
+    const validOperators = ['lt', 'gt', 'lte', 'gte', 'eq'];
+    const validActions = ['pause', 'activate', 'increase_budget', 'decrease_budget', 'notify'];
+    const validRuleTypes = ['simple', 'compound', 'scaling', 'anomaly', 'auto_restart'];
+    const validApplyTo = ['all', 'active', 'paused', 'specific'];
+
+    suggestions = suggestions
+      .filter((s: any) => s && s.name && s.metric && s.operator && s.actionType && typeof s.value === 'number')
+      .map((s: any) => ({
+        name: String(s.name).slice(0, 100),
+        description: String(s.description || '').slice(0, 300),
+        reasoning: String(s.reasoning || '').slice(0, 500),
+        ruleType: validRuleTypes.includes(s.ruleType) ? s.ruleType : 'simple',
+        metric: validMetrics.includes(s.metric) ? s.metric : 'ctr',
+        operator: validOperators.includes(s.operator) ? s.operator : 'lt',
+        value: Number(s.value),
+        periodDays: Number(s.periodDays) || 7,
+        actionType: validActions.includes(s.actionType) ? s.actionType : 'notify',
+        actionValue: s.actionValue != null ? Number(s.actionValue) : undefined,
+        applyTo: validApplyTo.includes(s.applyTo) ? s.applyTo : 'all',
+        config: s.config || undefined,
+        conditions: s.conditions || undefined,
+        conditionLogic: s.conditionLogic || undefined,
+      }))
+      .slice(0, 8);
+
+    return {
+      suggestions,
+      campaignCount: campaigns.length,
+      existingRulesCount: existingRules.length,
     };
   }
 

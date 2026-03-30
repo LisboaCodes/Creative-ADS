@@ -165,3 +165,78 @@ ${campaignsTable}
 
 Gere o briefing com formatacao rica markdown.`;
 }
+
+/**
+ * Build prompt for AI automation rule suggestions
+ */
+export function buildAutomationSuggestPrompt(context: {
+  campaigns: Array<{
+    id: string; name: string; status: string; platformType: string;
+    dailyBudget: number | null;
+    spend: number; clicks: number; impressions: number;
+    conversions: number; revenue: number;
+    ctr: number; cpc: number; cpm: number; roas: number;
+  }>;
+  existingRules: Array<{
+    name: string; ruleType: string; metric: string;
+    operator: string; value: number; actionType: string;
+  }>;
+  metricsOverview: {
+    spend: number; clicks: number; impressions: number;
+    conversions: number; revenue: number;
+    ctr: number; cpc: number; roas: number;
+  };
+}): string {
+  const campaignLines = context.campaigns
+    .map((c) => `- ${c.name} (${c.platformType}, ${c.status}): gasto=R$${c.spend.toFixed(2)} cli=${c.clicks} imp=${c.impressions} conv=${c.conversions} rec=R$${c.revenue.toFixed(2)} ctr=${c.ctr.toFixed(2)}% cpc=R$${c.cpc.toFixed(2)} cpm=R$${c.cpm.toFixed(2)} roas=${c.roas.toFixed(2)}x budget=${c.dailyBudget ? `R$${c.dailyBudget.toFixed(2)}` : '-'}`)
+    .join('\n');
+
+  const existingLines = context.existingRules.length > 0
+    ? context.existingRules.map((r) => `- ${r.name}: ${r.ruleType} | ${r.metric} ${r.operator} ${r.value} -> ${r.actionType}`).join('\n')
+    : 'Nenhuma regra existente.';
+
+  const o = context.metricsOverview;
+
+  return `Voce e um especialista em automacao de trafego pago. Analise os dados reais das campanhas abaixo e sugira regras de automacao praticas.
+
+BENCHMARKS: CTR bom>1.5% ruim<0.5% | CPC bom<R$2 alto>R$5 | ROAS bom>3x ruim<1x | CPM bom<R$20 alto>R$50
+
+METRICAS GERAIS (30d): gasto=R$${o.spend.toFixed(2)} cli=${o.clicks} imp=${o.impressions} conv=${o.conversions} rec=R$${o.revenue.toFixed(2)} ctr=${o.ctr.toFixed(2)}% cpc=R$${o.cpc.toFixed(2)} roas=${o.roas.toFixed(2)}x
+
+CAMPANHAS:
+${campaignLines || 'Nenhuma campanha encontrada.'}
+
+REGRAS JA EXISTENTES (nao duplicar):
+${existingLines}
+
+INSTRUCOES:
+- Sugira de 3 a 8 regras de automacao baseadas nos dados reais
+- Cada regra deve ter justificativa concreta baseada nos numeros
+- Tipos permitidos: simple, compound, scaling, anomaly, auto_restart
+- Metricas permitidas: ctr, cpc, cpm, roas, spend, conversions
+- Operadores permitidos: lt, gt, lte, gte, eq
+- Acoes permitidas: pause, activate, increase_budget, decrease_budget, notify
+- applyTo: "all", "active", "paused" ou "specific"
+- NAO duplique regras ja existentes
+- Retorne APENAS um JSON array puro, sem markdown, sem explicacao fora do JSON
+
+Formato de cada objeto:
+{
+  "name": "Nome curto da regra",
+  "description": "Descricao clara do que a regra faz",
+  "reasoning": "Justificativa baseada nos dados reais das campanhas",
+  "ruleType": "simple",
+  "metric": "ctr",
+  "operator": "lt",
+  "value": 0.5,
+  "periodDays": 7,
+  "actionType": "pause",
+  "actionValue": null,
+  "applyTo": "active",
+  "config": null,
+  "conditions": null,
+  "conditionLogic": null
+}
+
+Responda SOMENTE com o JSON array.`;
+}

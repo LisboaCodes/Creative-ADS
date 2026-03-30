@@ -149,6 +149,19 @@ export class AIController {
     }
   }
 
+  async suggestAutomations(req: AuthRequest, res: Response) {
+    try {
+      const result = await aiService.suggestAutomationRules(req.user!.userId);
+      return res.status(200).json({ success: true, data: result });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Suggest automations error:', error);
+      return res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
   async bulkApprove(req: AuthRequest, res: Response) {
     try {
       const parsed = bulkApproveSchema.parse(req.body);

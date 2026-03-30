@@ -21,6 +21,7 @@ import {
   Timer,
   Play,
   Pause,
+  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -116,6 +117,14 @@ interface CampaignSchedule {
     status: string;
     platformType: string;
   };
+}
+
+interface AISuggestion {
+  name: string; description: string; reasoning: string;
+  ruleType: string; metric: string; operator: string;
+  value: number; periodDays: number; actionType: string;
+  actionValue?: number; applyTo: string; config?: any;
+  conditions?: any[]; conditionLogic?: string;
 }
 
 // --- Label maps ---
@@ -287,6 +296,11 @@ export default function AutomationRules() {
   const [schedResumeUnit, setSchedResumeUnit] = useState<'minutes' | 'hours' | 'days'>('minutes');
   const [schedMaxExec, setSchedMaxExec] = useState('');
 
+  // ─── AI Suggestion state ──────────────────────
+  const [aiSuggestOpen, setAiSuggestOpen] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<AISuggestion[]>([]);
+  const [createdIndices, setCreatedIndices] = useState<Set<number>>(new Set());
+
   // ─── Queries ─────────────────────────────────
 
   const { data: rules, isLoading } = useQuery<AutomationRule[]>({
@@ -400,6 +414,54 @@ export default function AutomationRules() {
     },
     onError: (e: any) => toast.error(e.response?.data?.error || 'Erro ao cancelar'),
   });
+
+  // AI suggest mutations
+  const aiSuggestMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/api/ai/suggest-automations', {}, { timeout: 60000 });
+      return res.data.data;
+    },
+    onSuccess: (data) => {
+      setAiSuggestions(data.suggestions || []);
+      setCreatedIndices(new Set());
+      setAiSuggestOpen(true);
+      if (!data.suggestions?.length) {
+        toast.info('A IA nao encontrou sugestoes adicionais para suas campanhas.');
+      }
+    },
+    onError: (e: any) => toast.error(e.response?.data?.error || 'Erro ao gerar sugestoes da IA'),
+  });
+
+  async function handleCreateSuggestion(suggestion: AISuggestion, index: number) {
+    try {
+      const { reasoning, description, ...ruleData } = suggestion;
+      await api.post('/api/automation', ruleData);
+      setCreatedIndices((prev) => new Set(prev).add(index));
+      toast.success(`Regra "${suggestion.name}" criada!`);
+      queryClient.invalidateQueries({ queryKey: ['automation-rules'] });
+    } catch (e: any) {
+      toast.error(e.response?.data?.error || 'Erro ao criar regra');
+    }
+  }
+
+  async function handleCreateAllSuggestions() {
+    let created = 0;
+    for (let i = 0; i < aiSuggestions.length; i++) {
+      if (createdIndices.has(i)) continue;
+      try {
+        const { reasoning, description, ...ruleData } = aiSuggestions[i];
+        await api.post('/api/automation', ruleData);
+        setCreatedIndices((prev) => new Set(prev).add(i));
+        created++;
+      } catch {
+        // continue with next
+      }
+    }
+    if (created > 0) {
+      toast.success(`${created} regra(s) criada(s)!`);
+      queryClient.invalidateQueries({ queryKey: ['automation-rules'] });
+    }
+  }
 
   // ─── Handlers ─────────────────────────────────
 
@@ -585,7 +647,11 @@ export default function AutomationRules() {
 
         {/* ═══════════ TAB: REGRAS ═══════════ */}
         <TabsContent value="rules" className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => aiSuggestMutation.mutate()} disabled={aiSuggestMutation.isPending}>
+              {aiSuggestMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+              IA Sugerir Automacoes
+            </Button>
             <Button onClick={handleOpenCreate}><Plus className="h-4 w-4 mr-2" />Nova Regra</Button>
           </div>
 
@@ -1296,6 +1362,84 @@ export default function AutomationRules() {
             }} disabled={schedCreateMutation.isPending}>
               {schedCreateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Criar Agendamento'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══════════ DIALOG: AI SUGGESTIONS ═══════════ */}
+      <Dialog open={aiSuggestOpen} onOpenChange={setAiSuggestOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-yellow-500" />
+              Sugestoes da IA
+            </DialogTitle>
+            <DialogDescription>
+              A IA analisou suas campanhas e sugeriu as seguintes regras de automacao.
+            </DialogDescription>
+          </DialogHeader>
+
+          {aiSuggestions.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              Nenhuma sugestao encontrada. A IA nao identificou oportunidades adicionais.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {aiSuggestions.map((s, idx) => {
+                const RuleIcon = ruleTypeIcons[s.ruleType] || Zap;
+                const isCreated = createdIndices.has(idx);
+                return (
+                  <Card key={idx} className={isCreated ? 'opacity-60' : ''}>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <RuleIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <CardTitle className="text-sm font-medium truncate">{s.name}</CardTitle>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Badge variant="outline" className="text-xs">{ruleTypeLabels[s.ruleType] || s.ruleType}</Badge>
+                          <Badge variant="secondary" className="text-xs">{actionLabels[s.actionType] || s.actionType}</Badge>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {s.description && (
+                        <p className="text-sm text-muted-foreground">{s.description}</p>
+                      )}
+                      {s.reasoning && (
+                        <div className="bg-muted/50 rounded-md p-2">
+                          <p className="text-xs italic text-muted-foreground">{s.reasoning}</p>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline">{metricLabels[s.metric] || s.metric}</Badge>
+                        <Badge variant="outline">{operatorSymbols[s.operator] || s.operator} {s.value}</Badge>
+                        <Badge variant="outline">{s.periodDays}d</Badge>
+                        {s.actionValue && <Badge variant="outline">{s.actionValue}%</Badge>}
+                      </div>
+                      <div className="flex justify-end pt-1">
+                        {isCreated ? (
+                          <Badge className="bg-green-100 text-green-700">Criada ✓</Badge>
+                        ) : (
+                          <Button size="sm" variant="outline" onClick={() => handleCreateSuggestion(s, idx)}>
+                            <Plus className="h-3 w-3 mr-1" /> Criar
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setAiSuggestOpen(false)}>Fechar</Button>
+            {aiSuggestions.length > 0 && createdIndices.size < aiSuggestions.length && (
+              <Button onClick={handleCreateAllSuggestions}>
+                Criar Todas ({aiSuggestions.length - createdIndices.size})
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
