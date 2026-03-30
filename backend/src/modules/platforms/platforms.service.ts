@@ -753,7 +753,13 @@ export class PlatformsService {
       );
     }
 
-    return decrypt(platform.accessToken);
+    try {
+      return decrypt(platform.accessToken);
+    } catch {
+      throw new ServiceUnavailableError(
+        'Token inválido ou corrompido. Reconecte a plataforma.'
+      );
+    }
   }
 
   /**
