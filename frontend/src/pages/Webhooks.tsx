@@ -7,7 +7,6 @@ import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
-import { Switch } from '../components/ui/switch';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../components/ui/dialog';
@@ -141,7 +140,7 @@ export default function Webhooks() {
               ) : endpoints.length === 0 ? (
                 <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Nenhum webhook</TableCell></TableRow>
               ) : endpoints.map((ep: any) => (
-                <Collapsible key={ep.id} open={expandedId === ep.id} onOpenChange={(o) => setExpandedId(o ? ep.id : null)} asChild>
+                <Collapsible key={ep.id} open={expandedId === ep.id} onOpenChange={(o: boolean) => setExpandedId(o ? ep.id : null)} asChild>
                   <>
                     <TableRow>
                       <TableCell className="font-medium">{ep.name}</TableCell>
