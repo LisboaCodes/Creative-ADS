@@ -55,6 +55,17 @@ export const trackingWebhookLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+export const platformWebhookLimiter = rateLimit({
+  windowMs: 60_000,
+  max: isDev ? 1000 : 300,
+  message: {
+    success: false,
+    error: 'Rate limit exceeded for platform webhooks',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 export const redirectLimiter = rateLimit({
   windowMs: 60_000,
   max: isDev ? 1000 : 120,

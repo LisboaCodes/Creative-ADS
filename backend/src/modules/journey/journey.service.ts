@@ -1,5 +1,6 @@
 import { prisma } from '../../config/database';
 import { NotFoundError } from '../../utils/errors';
+import { leadEventsService } from '../tracking/lead-events.service';
 import type { CreateJourneyStageInput, UpdateJourneyStageInput, ReorderStagesInput, MoveLeadInput } from './journey.schemas';
 
 export class JourneyService {
@@ -128,6 +129,14 @@ export class JourneyService {
         },
       }),
     ]);
+
+    // Trigger lifecycle events asynchronously
+    leadEventsService.onLeadStageChanged(
+      leadId,
+      userId,
+      input.journeyStageId,
+      lead.currentJourneyStageId
+    ).catch(() => {});
 
     return { lead: updatedLead, log };
   }

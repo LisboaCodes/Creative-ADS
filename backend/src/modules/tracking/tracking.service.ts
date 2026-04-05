@@ -12,6 +12,8 @@ import type {
   DashboardQueryInput,
 } from './tracking.schemas';
 import { LeadSource, Prisma } from '@prisma/client';
+import { leadEventsService } from './lead-events.service';
+import { webhookDispatcherService } from '../webhooks/webhook-dispatcher.service';
 
 function generateShortCode(length = 7): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -196,13 +198,18 @@ export class TrackingService {
   }
 
   async createLead(userId: string, input: CreateLeadInput) {
-    return prisma.lead.create({
+    const lead = await prisma.lead.create({
       data: {
         ...input,
         email: input.email || null,
         userId,
       },
     });
+
+    // Trigger lifecycle events asynchronously
+    leadEventsService.onLeadCreated(lead.id, userId).catch(() => {});
+
+    return lead;
   }
 
   async updateLead(id: string, userId: string, input: UpdateLeadInput) {
@@ -215,6 +222,14 @@ export class TrackingService {
     });
 
     await cache.delPattern(`tracking:dash:${userId}:*`);
+
+    // Fire LEAD_UPDATED webhook asynchronously
+    webhookDispatcherService.dispatch({
+      event: 'LEAD_UPDATED',
+      userId,
+      data: { leadId: updated.id, name: updated.name, phone: updated.phone, status: updated.status },
+    }).catch(() => {});
+
     return updated;
   }
 
@@ -276,6 +291,10 @@ export class TrackingService {
     });
 
     await cache.delPattern(`tracking:dash:${userId}:*`);
+
+    // Trigger lifecycle events asynchronously
+    leadEventsService.onLeadCreated(lead.id, userId).catch(() => {});
+
     return lead;
   }
 

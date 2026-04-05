@@ -32,6 +32,14 @@ enum LeadSource {
   OTHER
 }
 
+// ─── Message Channel (Automation Engine) ─────────────
+
+enum MessageChannel {
+  WHATSAPP
+  INSTAGRAM
+  MESSENGER
+}
+
 // ─── Tintim-like Feature Enums ─────────────
 
 enum MetaConversionEvent {
@@ -990,6 +998,7 @@ model Lead {
   currentJourneyStageId String?
   currentJourneyStage   JourneyStage? @relation(fields: [currentJourneyStageId], references: [id], onDelete: SetNull)
   journeyLogs           LeadJourneyLog[]
+  conversationMessages  ConversationMessage[]
 
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
@@ -1168,6 +1177,29 @@ model TrackableMessage {
 
   @@index([userId])
   @@map("trackable_messages")
+}
+
+// ─── Conversation Messages (Automation Engine) ─────────────
+
+model ConversationMessage {
+  id         String         @id @default(cuid())
+  externalId String         // Platform message ID
+  channel    MessageChannel
+  direction  String         @default("inbound") // "inbound" | "outbound"
+  content    String?        @db.Text
+  senderName String?
+  senderId   String?        // Platform-specific sender ID
+  metadata   Json?
+
+  createdAt  DateTime       @default(now())
+
+  leadId     String
+  lead       Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([externalId, channel])
+  @@index([leadId])
+  @@index([createdAt])
+  @@map("conversation_messages")
 }
 
 // ─── Client Access Sharing (Tintim) ─────────────

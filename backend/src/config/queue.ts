@@ -100,6 +100,45 @@ export const whatsappDailySummaryQueue = new Queue('whatsapp-daily-summary', {
   },
 });
 
+export const incomingMessageQueue = new Queue('incoming-message', {
+  redis: redisConfig,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 2000,
+    },
+    removeOnComplete: true,
+    removeOnFail: false,
+  },
+});
+
+export const webhookDispatchQueue = new Queue('webhook-dispatch', {
+  redis: redisConfig,
+  defaultJobOptions: {
+    attempts: 5,
+    backoff: {
+      type: 'exponential',
+      delay: 3000,
+    },
+    removeOnComplete: true,
+    removeOnFail: false,
+  },
+});
+
+export const conversionApiQueue = new Queue('conversion-api', {
+  redis: redisConfig,
+  defaultJobOptions: {
+    attempts: 5,
+    backoff: {
+      type: 'exponential',
+      delay: 3000,
+    },
+    removeOnComplete: true,
+    removeOnFail: false,
+  },
+});
+
 export const processClickQueue = new Queue('process-click', {
   redis: redisConfig,
   defaultJobOptions: {
@@ -142,6 +181,9 @@ setupQueueListeners(generateReportsQueue, 'generate-reports');
 setupQueueListeners(cleanOldMetricsQueue, 'clean-old-metrics');
 setupQueueListeners(scheduledPauseQueue, 'scheduled-pause');
 setupQueueListeners(whatsappDailySummaryQueue, 'whatsapp-daily-summary');
+setupQueueListeners(incomingMessageQueue, 'incoming-message');
+setupQueueListeners(webhookDispatchQueue, 'webhook-dispatch');
+setupQueueListeners(conversionApiQueue, 'conversion-api');
 setupQueueListeners(processClickQueue, 'process-click');
 
 // Graceful shutdown
@@ -155,6 +197,9 @@ process.on('SIGTERM', async () => {
     cleanOldMetricsQueue.close(),
     scheduledPauseQueue.close(),
     whatsappDailySummaryQueue.close(),
+    incomingMessageQueue.close(),
+    webhookDispatchQueue.close(),
+    conversionApiQueue.close(),
     processClickQueue.close(),
   ]);
   logger.info('✅ Queues closed');
@@ -168,5 +213,8 @@ export const queues = {
   cleanOldMetrics: cleanOldMetricsQueue,
   scheduledPause: scheduledPauseQueue,
   whatsappDailySummary: whatsappDailySummaryQueue,
+  incomingMessage: incomingMessageQueue,
+  webhookDispatch: webhookDispatchQueue,
+  conversionApi: conversionApiQueue,
   processClick: processClickQueue,
 };

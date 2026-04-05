@@ -1,8 +1,14 @@
 import { Router } from 'express';
 import { platformsController } from './platforms.controller';
 import { authenticate } from '../auth/auth.middleware';
+import { metaWebhookController } from './meta-webhook.controller';
+import { platformWebhookLimiter } from '../../middleware/rate-limit.middleware';
 
 const router = Router();
+
+// Meta webhooks (Instagram DM / Messenger) - public, BEFORE auth routes
+router.get('/meta/webhook', (req, res) => metaWebhookController.verify(req, res));
+router.post('/meta/webhook', platformWebhookLimiter, (req, res) => metaWebhookController.handleEvent(req, res));
 
 // Get all user platforms
 router.get('/', authenticate, (req, res) =>

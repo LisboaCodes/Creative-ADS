@@ -81,6 +81,10 @@ const envSchema = z.object({
   EVOLUTION_API_URL: z.string().url().optional(),
   EVOLUTION_API_KEY: z.string().optional(),
   EVOLUTION_INSTANCE: z.string().optional(),
+  EVOLUTION_WEBHOOK_TOKEN: z.string().optional(),
+
+  // Meta Webhooks (Instagram DM / Messenger)
+  META_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
 
   // Rate Limiting
   RATE_LIMIT_WINDOW_MS: z.string().transform(Number).default('60000'),
