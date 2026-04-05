@@ -14,3 +14,12 @@ export const updateClientSchema = createClientSchema.partial().extend({
 
 export type CreateClientInput = z.infer<typeof createClientSchema>;
 export type UpdateClientInput = z.infer<typeof updateClientSchema>;
+
+// ─── Client Access Sharing ─────────────
+
+export const shareClientAccessSchema = z.object({
+  email: z.string().email('Email inválido'),
+  role: z.enum(['viewer', 'editor', 'admin']).optional().default('viewer'),
+});
+
+export type ShareClientAccessInput = z.infer<typeof shareClientAccessSchema>;

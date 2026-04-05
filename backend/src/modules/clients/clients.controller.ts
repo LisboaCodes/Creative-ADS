@@ -1,8 +1,9 @@
 import { Response } from 'express';
 import { ZodError } from 'zod';
 import { AuthRequest } from '../auth/auth.middleware';
+
 import { clientsService } from './clients.service';
-import { createClientSchema, updateClientSchema } from './clients.schemas';
+import { createClientSchema, updateClientSchema, shareClientAccessSchema } from './clients.schemas';
 import { logger } from '../../utils/logger';
 import { AppError } from '../../utils/errors';
 
@@ -67,6 +68,45 @@ export class ClientsController {
     } catch (error: any) {
       if (error instanceof AppError) return res.status(error.statusCode).json({ success: false, error: error.message });
       logger.error('Delete client error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+  // ─── Access Sharing ─────────────
+
+  async shareAccess(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ success: false, error: 'Not authenticated' });
+      const input = shareClientAccessSchema.parse(req.body);
+      const access = await clientsService.shareAccess(req.params.id, req.user.userId, input);
+      res.status(201).json({ success: true, data: access });
+    } catch (error: any) {
+      if (error instanceof ZodError) return res.status(422).json({ success: false, error: error.errors });
+      if (error instanceof AppError) return res.status(error.statusCode).json({ success: false, error: error.message });
+      logger.error('Share client access error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  async removeAccess(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ success: false, error: 'Not authenticated' });
+      await clientsService.removeAccess(req.params.id, req.user.userId, req.params.targetUserId);
+      res.json({ success: true, data: { deleted: true } });
+    } catch (error: any) {
+      if (error instanceof AppError) return res.status(error.statusCode).json({ success: false, error: error.message });
+      logger.error('Remove client access error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  async listAccess(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ success: false, error: 'Not authenticated' });
+      const access = await clientsService.listAccess(req.params.id, req.user.userId);
+      res.json({ success: true, data: access });
+    } catch (error: any) {
+      if (error instanceof AppError) return res.status(error.statusCode).json({ success: false, error: error.message });
+      logger.error('List client access error:', error);
       res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }

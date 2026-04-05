@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const generateReportSchema = z.object({
   title: z.string().min(1).max(200),
-  template: z.enum(['executive', 'detailed', 'financial']),
+  template: z.enum(['executive', 'detailed', 'financial', 'conversations', 'offline-conversions', 'journey-history', 'sales-history']),
   platformId: z.string().optional(),
   startDate: z.string().transform((str) => new Date(str)),
   endDate: z.string().transform((str) => new Date(str)),

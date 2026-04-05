@@ -26,6 +26,12 @@ import ApiLogs from './pages/ApiLogs';
 import KnowledgeBase from './pages/KnowledgeBase';
 import Audiences from './pages/Audiences';
 import Leads from './pages/Leads';
+import PurchaseJourney from './pages/PurchaseJourney';
+import TrackingLinks from './pages/TrackingLinks';
+import ConversionEvents from './pages/ConversionEvents';
+import PixelConfig from './pages/PixelConfig';
+import WebhooksPage from './pages/Webhooks';
+import TrackableMessages from './pages/TrackableMessages';
 
 // Layout
 import AppLayout from './components/layout/AppLayout';
@@ -130,6 +136,12 @@ function App() {
             <Route path="audiences" element={<ErrorBoundary><Audiences /></ErrorBoundary>} />
             <Route path="knowledge-base" element={<ErrorBoundary><KnowledgeBase /></ErrorBoundary>} />
             <Route path="leads" element={<ErrorBoundary><Leads /></ErrorBoundary>} />
+            <Route path="purchase-journey" element={<ErrorBoundary><PurchaseJourney /></ErrorBoundary>} />
+            <Route path="tracking-links" element={<ErrorBoundary><TrackingLinks /></ErrorBoundary>} />
+            <Route path="conversion-events" element={<ErrorBoundary><ConversionEvents /></ErrorBoundary>} />
+            <Route path="pixel" element={<ErrorBoundary><PixelConfig /></ErrorBoundary>} />
+            <Route path="webhooks" element={<ErrorBoundary><WebhooksPage /></ErrorBoundary>} />
+            <Route path="tracking-messages" element={<ErrorBoundary><TrackableMessages /></ErrorBoundary>} />
           </Route>
 
           {/* Logout */}

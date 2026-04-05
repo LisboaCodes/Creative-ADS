@@ -206,6 +206,82 @@ export class TrackingController {
     }
   }
 
+  // ─── WhatsApp Meta Ads Redirect ─────────────
+
+  async handleWhatsAppRedirect(req: Request, res: Response) {
+    try {
+      const { shortCode } = req.params;
+      const link = await prisma.trackingLink.findUnique({
+        where: { shortCode },
+        select: {
+          id: true, isActive: true, isMetaAds: true,
+          whatsappNumber: true, whatsappMessage: true, whatsappRedirect: true,
+          redirectPageTitle: true, redirectPageMessage: true, destinationUrl: true,
+        },
+      });
+
+      if (!link || !link.isActive) {
+        return res.status(404).send('<h1>Link não encontrado</h1>');
+      }
+
+      const encodedMsg = encodeURIComponent(link.whatsappMessage || '');
+      const number = (link.whatsappNumber || '').replace(/\D/g, '');
+      const waUrl = link.whatsappRedirect === 'web'
+        ? `https://web.whatsapp.com/send?phone=${number}&text=${encodedMsg}`
+        : `https://api.whatsapp.com/send?phone=${number}&text=${encodedMsg}`;
+
+      const title = link.redirectPageTitle || 'Redirecionando...';
+      const message = link.redirectPageMessage || 'Você será redirecionado para o WhatsApp em instantes.';
+
+      // Record click async
+      const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '';
+      const userAgent = req.headers['user-agent'] || '';
+      const referer = req.headers['referer'];
+      trackingService.recordClick(shortCode, ip, userAgent, referer).catch(() => {});
+
+      res.send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: linear-gradient(135deg, #25D366 0%, #128C7E 100%); color: white; text-align: center; }
+    .container { padding: 2rem; max-width: 480px; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    p { font-size: 1rem; opacity: 0.9; }
+    .spinner { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 1s linear infinite; margin: 1.5rem auto; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .countdown { font-size: 2rem; font-weight: bold; margin: 1rem 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>${title}</h1>
+    <p>${message}</p>
+    <div class="spinner"></div>
+    <div class="countdown" id="countdown">5</div>
+  </div>
+  <script>
+    let seconds = 5;
+    const el = document.getElementById('countdown');
+    const timer = setInterval(() => {
+      seconds--;
+      el.textContent = seconds;
+      if (seconds <= 0) {
+        clearInterval(timer);
+        window.location.href = '${waUrl}';
+      }
+    }, 1000);
+  </script>
+</body>
+</html>`);
+    } catch (error: any) {
+      logger.error('WhatsApp redirect error:', error);
+      res.status(500).send('<h1>Erro interno</h1>');
+    }
+  }
+
   // ─── Dashboard ─────────────
 
   async getDashboard(req: AuthRequest, res: Response) {

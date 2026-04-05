@@ -34,6 +34,11 @@ import {
   Activity,
   GraduationCap,
   Target,
+  Workflow,
+  Link2,
+  MessageSquareText,
+  QrCode,
+  Webhook,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -147,6 +152,12 @@ export default function AppLayout() {
     { name: 'Relatorios', href: '/reports', icon: FileText },
     { name: 'Financeiro', href: '/financial', icon: Wallet },
     { name: 'Leads', href: '/leads', icon: Target },
+    { name: 'Jornada de Compra', href: '/purchase-journey', icon: Workflow },
+    { name: 'Links Rastreaveis', href: '/tracking-links', icon: Link2 },
+    { name: 'Msg Rastreaveis', href: '/tracking-messages', icon: MessageSquareText },
+    { name: 'Eventos Conversao', href: '/conversion-events', icon: Zap },
+    { name: 'Pixel', href: '/pixel', icon: QrCode },
+    { name: 'Webhooks', href: '/webhooks', icon: Webhook },
     { name: 'Biblioteca', href: '/campaign-library', icon: BookOpen },
     { name: 'WhatsApp', href: '/whatsapp', icon: MessageSquare },
     { name: 'Clientes', href: '/clients', icon: Users },
@@ -407,6 +418,12 @@ export default function AppLayout() {
                 '/audiences': 'Públicos Personalizados',
                 '/api-logs': 'API Logs',
                 '/leads': 'Leads',
+                '/purchase-journey': 'Jornada de Compra',
+                '/tracking-links': 'Links Rastreaveis',
+                '/tracking-messages': 'Mensagens Rastreaveis',
+                '/conversion-events': 'Eventos de Conversao',
+                '/pixel': 'Pixel',
+                '/webhooks': 'Webhooks',
               } as Record<string, string>)[location.pathname] || 'Painel'}
             </h2>
           </div>

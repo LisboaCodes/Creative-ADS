@@ -13,6 +13,13 @@ export const createTrackingLinkSchema = z.object({
   customParams: z.record(z.string()).optional(),
   campaignId: z.string().optional(),
   platformId: z.string().optional(),
+  // WhatsApp / Meta Ads fields
+  whatsappMessage: z.string().optional(),
+  whatsappRedirect: z.enum(['app', 'web']).optional().default('app'),
+  isMetaAds: z.boolean().optional().default(false),
+  redirectPageTitle: z.string().optional(),
+  redirectPageMessage: z.string().optional(),
+  whatsappNumber: z.string().optional(),
 });
 
 export const updateTrackingLinkSchema = createTrackingLinkSchema.partial().extend({

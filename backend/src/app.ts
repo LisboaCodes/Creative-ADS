@@ -26,6 +26,11 @@ import clientsRoutes from './modules/clients/clients.routes';
 import apiLogsRoutes from './modules/api-logs/api-logs.routes';
 import audiencesRoutes from './modules/audiences/audiences.routes';
 import trackingRoutes from './modules/tracking/tracking.routes';
+import journeyRoutes from './modules/journey/journey.routes';
+import conversionEventsRoutes from './modules/conversion-events/conversion-events.routes';
+import pixelRoutes from './modules/pixel/pixel.routes';
+import webhooksRoutes from './modules/webhooks/webhooks.routes';
+import trackableMessagesRoutes from './modules/trackable-messages/trackable-messages.routes';
 import { trackingController } from './modules/tracking/tracking.controller';
 import { redirectLimiter } from './middleware/rate-limit.middleware';
 
@@ -99,9 +104,17 @@ export function createApp(): Application {
   app.use('/api/api-logs', apiLogsRoutes);
   app.use('/api/audiences', audiencesRoutes);
   app.use('/api/tracking', trackingRoutes);
+  app.use('/api/journey', journeyRoutes);
+  app.use('/api/conversion-events', conversionEventsRoutes);
+  app.use('/api/pixel', pixelRoutes);
+  app.use('/api/webhooks', webhooksRoutes);
+  app.use('/api/trackable-messages', trackableMessagesRoutes);
 
   // Public tracking redirect (before error handlers)
   app.get('/t/:shortCode', redirectLimiter, (req, res) => trackingController.handleRedirect(req, res));
+
+  // WhatsApp Meta Ads redirect (5-second wait page)
+  app.get('/wa/:shortCode', redirectLimiter, (req, res) => trackingController.handleWhatsAppRedirect(req, res));
 
   // Swagger documentation
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));

@@ -32,6 +32,35 @@ enum LeadSource {
   OTHER
 }
 
+// ─── Tintim-like Feature Enums ─────────────
+
+enum MetaConversionEvent {
+  ViewContent
+  Lead
+  Purchase
+  AddPaymentInfo
+  AddToCart
+  AddToWishlist
+  CompleteRegistration
+  Contact
+  CustomizeProduct
+  Donate
+  FindLocation
+  InitiateCheckout
+  Schedule
+  Search
+  StartTrial
+  SubmitApplication
+  Subscribe
+}
+
+enum WebhookEventType {
+  NEW_LEAD
+  LEAD_STAGE_CHANGE
+  SALE_COMPLETED
+  LEAD_UPDATED
+}
+
 enum LeadStatus {
   NEW
   CONTACTED
@@ -109,6 +138,14 @@ model User {
   trackingLinks     TrackingLink[]
   leads             Lead[]
   trackingApiKey    String?          @unique
+
+  // Tintim features
+  journeyStages        JourneyStage[]
+  conversionEvents     ConversionEventConfig[]
+  pixelConfigs         PixelConfig[]
+  webhookEndpoints     WebhookEndpoint[]
+  trackableMessages    TrackableMessage[]
+  sharedClientAccess   ClientAccess[]
 
   @@index([email])
   @@map("users")
@@ -802,6 +839,7 @@ model Client {
   platforms      Platform[]
   whatsappGroups WhatsAppGroup[]
   leads          Lead[]
+  accessShares   ClientAccess[]
 
   @@index([userId])
   @@map("clients")
@@ -873,6 +911,14 @@ model TrackingLink {
   // Custom parameters (ad_id, adset_id, etc)
   customParams    Json?
 
+  // WhatsApp / Meta Ads fields
+  whatsappMessage       String?   // Initial WhatsApp message
+  whatsappRedirect      String?   @default("app") // "app" or "web"
+  isMetaAds             Boolean   @default(false)
+  redirectPageTitle     String?
+  redirectPageMessage   String?
+  whatsappNumber        String?
+
   // Denormalized counters
   totalClicks     Int       @default(0)
   uniqueClicks    Int       @default(0)
@@ -940,6 +986,11 @@ model Lead {
   metadata        Json?
   notes           String?     @db.Text
 
+  // Journey tracking
+  currentJourneyStageId String?
+  currentJourneyStage   JourneyStage? @relation(fields: [currentJourneyStageId], references: [id], onDelete: SetNull)
+  journeyLogs           LeadJourneyLog[]
+
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
@@ -961,5 +1012,180 @@ model Lead {
   @@index([createdAt])
   @@index([campaignId])
   @@index([phone])
+  @@index([currentJourneyStageId])
   @@map("leads")
+}
+
+// ─── Journey Stages (Tintim) ─────────────
+
+model JourneyStage {
+  id               String              @id @default(cuid())
+  name             String
+  funnelOrder      Int
+  conversionEvent  MetaConversionEvent?
+  isSaleStage      Boolean             @default(false)
+  isFirstContact   Boolean             @default(false)
+  triggerKeyword   String?
+
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  userId           String
+  user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  leads            Lead[]
+  journeyLogs      LeadJourneyLog[]
+  conversionEvents ConversionEventConfig[]
+
+  @@index([userId])
+  @@index([funnelOrder])
+  @@map("journey_stages")
+}
+
+model LeadJourneyLog {
+  id              String       @id @default(cuid())
+  changedBy       String?      // "system" | "manual" | user name
+  metadata        Json?
+
+  createdAt       DateTime     @default(now())
+
+  leadId          String
+  lead            Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  journeyStageId  String
+  journeyStage    JourneyStage @relation(fields: [journeyStageId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([journeyStageId])
+  @@map("lead_journey_logs")
+}
+
+// ─── Conversion Event Config (Tintim) ─────────────
+
+model ConversionEventConfig {
+  id                     String              @id @default(cuid())
+  name                   String
+  platform               String              // "meta" | "google"
+  metaEventName          MetaConversionEvent?
+  metaPixelId            String?
+  metaAccessToken        String?
+  googleConversionAction String?
+  googleCustomerId       String?
+  isActive               Boolean             @default(true)
+  autoSend               Boolean             @default(false)
+
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
+  userId                 String
+  user                   User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  journeyStageId         String?
+  journeyStage           JourneyStage?       @relation(fields: [journeyStageId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([journeyStageId])
+  @@map("conversion_event_configs")
+}
+
+// ─── Pixel Config (Tintim) ─────────────
+
+model PixelConfig {
+  id            String   @id @default(cuid())
+  platform      String   // "meta" | "google"
+  pixelId       String
+  accessToken   String
+  testEventCode String?
+  isActive      Boolean  @default(true)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("pixel_configs")
+}
+
+// ─── Webhook Endpoints (Tintim) ─────────────
+
+model WebhookEndpoint {
+  id         String             @id @default(cuid())
+  name       String
+  url        String
+  secret     String?
+  isActive   Boolean            @default(true)
+  events     WebhookEventType[]
+  retryCount Int                @default(3)
+  timeoutMs  Int                @default(5000)
+  stats      Json?              // { totalSent, totalSuccess, totalFailed, lastSentAt }
+
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  userId     String
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@index([userId])
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id             String          @id @default(cuid())
+  eventType      WebhookEventType
+  payload        Json
+  responseStatus Int?
+  responseBody   String?         @db.Text
+  success        Boolean         @default(false)
+  duration       Int?            // ms
+  error          String?
+  attempt        Int             @default(1)
+
+  createdAt      DateTime        @default(now())
+
+  endpointId     String
+  endpoint       WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([endpointId])
+  @@index([createdAt])
+  @@map("webhook_deliveries")
+}
+
+// ─── Trackable Messages (Tintim) ─────────────
+
+model TrackableMessage {
+  id              String   @id @default(cuid())
+  name            String
+  messageTemplate String   @db.Text
+  gclid           String?
+  isActive        Boolean  @default(true)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("trackable_messages")
+}
+
+// ─── Client Access Sharing (Tintim) ─────────────
+
+model ClientAccess {
+  id        String   @id @default(cuid())
+  role      String   @default("viewer") // "viewer" | "editor" | "admin"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientId])
+  @@index([userId])
+  @@index([clientId])
+  @@map("client_access")
 }

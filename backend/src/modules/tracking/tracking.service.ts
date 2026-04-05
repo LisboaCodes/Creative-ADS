@@ -81,6 +81,12 @@ export class TrackingService {
         customParams: input.customParams || undefined,
         campaignId: input.campaignId || null,
         platformId: input.platformId || null,
+        whatsappMessage: input.whatsappMessage || null,
+        whatsappRedirect: input.whatsappRedirect || 'app',
+        isMetaAds: input.isMetaAds || false,
+        redirectPageTitle: input.redirectPageTitle || null,
+        redirectPageMessage: input.redirectPageMessage || null,
+        whatsappNumber: input.whatsappNumber || null,
         userId,
       },
     });

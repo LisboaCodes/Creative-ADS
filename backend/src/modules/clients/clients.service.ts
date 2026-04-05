@@ -1,6 +1,6 @@
 import { prisma } from '../../config/database';
 import { NotFoundError } from '../../utils/errors';
-import type { CreateClientInput, UpdateClientInput } from './clients.schemas';
+import type { CreateClientInput, UpdateClientInput, ShareClientAccessInput } from './clients.schemas';
 
 export class ClientsService {
   async getClients(userId: string) {
@@ -76,6 +76,46 @@ export class ClientsService {
 
     await prisma.client.delete({ where: { id: clientId } });
     return { deleted: true };
+  }
+
+  // ─── Access Sharing ─────────────
+
+  async shareAccess(clientId: string, userId: string, input: ShareClientAccessInput) {
+    const client = await prisma.client.findFirst({ where: { id: clientId, userId } });
+    if (!client) throw new NotFoundError('Cliente não encontrado');
+
+    const targetUser = await prisma.user.findUnique({ where: { email: input.email } });
+    if (!targetUser) throw new NotFoundError('Usuário com esse email não encontrado');
+
+    return prisma.clientAccess.upsert({
+      where: { userId_clientId: { userId: targetUser.id, clientId } },
+      create: { userId: targetUser.id, clientId, role: input.role || 'viewer' },
+      update: { role: input.role || 'viewer' },
+    });
+  }
+
+  async removeAccess(clientId: string, userId: string, targetUserId: string) {
+    const client = await prisma.client.findFirst({ where: { id: clientId, userId } });
+    if (!client) throw new NotFoundError('Cliente não encontrado');
+
+    const access = await prisma.clientAccess.findUnique({
+      where: { userId_clientId: { userId: targetUserId, clientId } },
+    });
+    if (!access) throw new NotFoundError('Acesso não encontrado');
+
+    await prisma.clientAccess.delete({ where: { id: access.id } });
+    return { deleted: true };
+  }
+
+  async listAccess(clientId: string, userId: string) {
+    const client = await prisma.client.findFirst({ where: { id: clientId, userId } });
+    if (!client) throw new NotFoundError('Cliente não encontrado');
+
+    return prisma.clientAccess.findMany({
+      where: { clientId },
+      include: { user: { select: { id: true, name: true, email: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 }
 
