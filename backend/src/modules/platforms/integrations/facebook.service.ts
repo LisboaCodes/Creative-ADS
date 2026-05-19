@@ -112,25 +112,10 @@ export class FacebookService extends BasePlatformService {
         adAccountsParams = {};
       }
 
-      // 2. Get all Business Managers and their ad accounts
-      let bmUrl: string | null = `${FACEBOOK_GRAPH_API}/me/businesses`;
-      let bmParams: any = {
-        access_token: longLivedToken,
-        fields: 'id,name',
-        limit: 100,
-      };
+      // 2. Get all Business Managers (direct + owned/client + derived from ad accounts)
+      const businesses = await this.getBusinessManagers(longLivedToken);
 
-      const businesses: any[] = [];
-      while (bmUrl) {
-        const bmResponse: { data: any } = await axios.get(bmUrl, { params: bmParams });
-        if (bmResponse.data.data) {
-          businesses.push(...bmResponse.data.data);
-        }
-        bmUrl = bmResponse.data.paging?.next || null;
-        bmParams = {};
-      }
-
-      logger.info(`Found ${businesses.length} Business Managers: ${businesses.map((b: any) => b.name).join(', ')}`);
+      logger.info(`Found ${businesses.length} Business Managers: ${businesses.map((b) => b.name).join(', ')}`);
 
       // For each BM, get owned ad accounts
       for (const bm of businesses) {
@@ -807,38 +792,77 @@ export class FacebookService extends BasePlatformService {
   }
 
   /**
-   * Get all Business Managers the user has access to
+   * Get all Business Managers the user has access to.
+   *
+   * `/me/businesses` only returns BMs the user is a *direct* member of, so it
+   * misses client/agency BMs. This combines three sources and de-duplicates:
+   *   1. /me/businesses                  - BMs with direct membership
+   *   2. /{bm}/owned_businesses + client_businesses - agency / BM-to-BM relations
+   *   3. /me/adaccounts -> business      - BMs reachable only via an ad account
    */
   async getBusinessManagers(accessToken: string): Promise<Array<{ id: string; name: string; createdTime?: string }>> {
-    try {
-      const businesses: Array<{ id: string; name: string; createdTime?: string }> = [];
-      let url: string | null = `${FACEBOOK_GRAPH_API}/me/businesses`;
-      let params: any = {
-        access_token: accessToken,
-        fields: 'id,name,created_time',
-        limit: 100,
-      };
+    const businesses: Array<{ id: string; name: string; createdTime?: string }> = [];
+    const seenIds = new Set<string>();
 
+    const addBM = (bm: any) => {
+      if (bm?.id && !seenIds.has(bm.id)) {
+        seenIds.add(bm.id);
+        businesses.push({ id: bm.id, name: bm.name || bm.id, createdTime: bm.created_time });
+      }
+    };
+
+    // Fetch a paginated edge that returns Business objects
+    const fetchBMEdge = async (path: string): Promise<any[]> => {
+      const found: any[] = [];
+      try {
+        let url: string | null = `${FACEBOOK_GRAPH_API}/${path}`;
+        let params: any = { access_token: accessToken, fields: 'id,name,created_time', limit: 100 };
+        while (url) {
+          const response: { data: any } = await axios.get(url, { params });
+          if (response.data.data) found.push(...response.data.data);
+          url = response.data.paging?.next || null;
+          params = {};
+        }
+      } catch (err: any) {
+        logger.warn(
+          `Facebook getBusinessManagers: could not fetch ${path}: ${err.response?.data?.error?.message || err.message}`
+        );
+      }
+      return found;
+    };
+
+    // 1. BMs with direct membership
+    const directBMs = await fetchBMEdge('me/businesses');
+    directBMs.forEach(addBM);
+
+    // 2. owned + client BMs of each direct BM (one hop - covers agency setups)
+    for (const bm of [...businesses]) {
+      (await fetchBMEdge(`${bm.id}/owned_businesses`)).forEach(addBM);
+      (await fetchBMEdge(`${bm.id}/client_businesses`)).forEach(addBM);
+    }
+
+    // 3. BMs reachable only through an accessible ad account
+    try {
+      let url: string | null = `${FACEBOOK_GRAPH_API}/me/adaccounts`;
+      let params: any = { access_token: accessToken, fields: 'business{id,name,created_time}', limit: 100 };
       while (url) {
         const response: { data: any } = await axios.get(url, { params });
         if (response.data.data) {
-          for (const bm of response.data.data) {
-            businesses.push({
-              id: bm.id,
-              name: bm.name,
-              createdTime: bm.created_time,
-            });
+          for (const acc of response.data.data) {
+            if (acc.business) addBM(acc.business);
           }
         }
         url = response.data.paging?.next || null;
         params = {};
       }
-
-      return businesses;
-    } catch (error: any) {
-      logger.error('Facebook getBusinessManagers error:', error.response?.data || error.message);
-      return [];
+    } catch (err: any) {
+      logger.warn(
+        `Facebook getBusinessManagers: could not derive BMs from ad accounts: ${err.response?.data?.error?.message || err.message}`
+      );
     }
+
+    logger.info(`Facebook getBusinessManagers: found ${businesses.length} business manager(s)`);
+    return businesses;
   }
 
   /**

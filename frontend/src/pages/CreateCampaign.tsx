@@ -207,16 +207,6 @@ export default function CreateCampaign() {
     enabled: !!interestSearch && interestSearch.length >= 2 && !!formData.platformId,
   });
 
-  // Fetch custom audiences for selected platform
-  const { data: platformAudiences } = useQuery({
-    queryKey: ['audiences-platform', formData.platformId],
-    queryFn: async () => {
-      const response = await api.get(`/api/audiences/platform/${formData.platformId}`);
-      return response.data.data;
-    },
-    enabled: !!formData.platformId,
-  });
-
   // Build campaign payload
   const buildPayload = (saveAsDraft = false) => {
     const targeting: any = { ...formData.targeting };
@@ -808,46 +798,6 @@ export default function CreateCampaign() {
                   </div>
                 )}
               </div>
-
-              {/* Custom Audiences */}
-              {platformAudiences && platformAudiences.length > 0 && (
-                <div>
-                  <Label>Públicos Personalizados</Label>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Selecione públicos criados a partir de listas de emails
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {platformAudiences.map((aud: any) => {
-                      const isSelected = formData.targeting.customAudiences.some((a) => a.id === aud.externalId);
-                      return (
-                        <Button
-                          key={aud.id}
-                          variant={isSelected ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => {
-                            if (isSelected) {
-                              updateTargeting(
-                                'customAudiences',
-                                formData.targeting.customAudiences.filter((a) => a.id !== aud.externalId)
-                              );
-                            } else {
-                              updateTargeting('customAudiences', [
-                                ...formData.targeting.customAudiences,
-                                { id: aud.externalId, name: aud.name },
-                              ]);
-                            }
-                          }}
-                        >
-                          {aud.name}
-                          <span className="ml-1 text-xs opacity-70">
-                            ({aud.emailCount?.toLocaleString('pt-BR')} emails)
-                          </span>
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
 
               <Button
                 variant="outline"

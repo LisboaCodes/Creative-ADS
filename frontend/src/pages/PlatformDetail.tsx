@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { formatCurrency, formatNumber, formatPercentage, formatDate } from '../lib/utils';
@@ -62,6 +62,7 @@ const platformNames: Record<string, string> = {
 export default function PlatformDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [disconnectDialog, setDisconnectDialog] = useState(false);
   const [selectedCreative, setSelectedCreative] = useState<any>(null);
 
@@ -115,15 +116,27 @@ export default function PlatformDetail() {
     enabled: !!id,
   });
 
-  const handleSync = async () => {
-    if (!id) return;
-    try {
-      await api.post(`/api/platforms/${id}/sync`);
-      toast.success('Sincronização iniciada com sucesso');
-    } catch (error: any) {
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post(`/api/platforms/${id}/sync`);
+      return response.data.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', id] });
+      queryClient.invalidateQueries({ queryKey: ['overview-metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['platforms'] });
+      queryClient.invalidateQueries({ queryKey: ['pixels', id] });
+      const synced = data?.synced ?? 0;
+      toast.success(
+        synced > 0
+          ? `Sincronização concluída · ${synced} campanha(s) atualizada(s)`
+          : 'Sincronização concluída'
+      );
+    },
+    onError: (error: any) => {
       toast.error(error.response?.data?.error || 'Falha ao sincronizar');
-    }
-  };
+    },
+  });
 
   const handleDisconnect = async () => {
     if (!id) return;
@@ -192,9 +205,14 @@ export default function PlatformDetail() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleSync}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Sincronizar
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+            {syncMutation.isPending ? 'Sincronizando...' : 'Sincronizar'}
           </Button>
           <Button
             variant="outline"

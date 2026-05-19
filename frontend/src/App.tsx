@@ -12,19 +12,13 @@ import CampaignDetail from './pages/CampaignDetail';
 import Platforms from './pages/Platforms';
 import PlatformDetail from './pages/PlatformDetail';
 import BusinessManagerDetail from './pages/BusinessManagerDetail';
-import AdLibrary from './pages/AdLibrary';
 import CreateCampaign from './pages/CreateCampaign';
 import AIAgent from './pages/AIAgent';
 import Diagnostics from './pages/Diagnostics';
 import Reports from './pages/Reports';
-import Financial from './pages/Financial';
 import AutomationRules from './pages/AutomationRules';
-import CampaignLibrary from './pages/CampaignLibrary';
 import WhatsAppSettings from './pages/WhatsAppSettings';
 import Clients from './pages/Clients';
-import ApiLogs from './pages/ApiLogs';
-import KnowledgeBase from './pages/KnowledgeBase';
-import Audiences from './pages/Audiences';
 import Leads from './pages/Leads';
 import PurchaseJourney from './pages/PurchaseJourney';
 import TrackingLinks from './pages/TrackingLinks';
@@ -123,18 +117,12 @@ function App() {
             <Route path="platforms" element={<ErrorBoundary><Platforms /></ErrorBoundary>} />
             <Route path="platforms/bm/:bmId" element={<ErrorBoundary><BusinessManagerDetail /></ErrorBoundary>} />
             <Route path="platforms/:id" element={<ErrorBoundary><PlatformDetail /></ErrorBoundary>} />
-            <Route path="ad-library" element={<ErrorBoundary><AdLibrary /></ErrorBoundary>} />
             <Route path="ai-agent" element={<ErrorBoundary><AIAgent /></ErrorBoundary>} />
             <Route path="diagnostics" element={<ErrorBoundary><Diagnostics /></ErrorBoundary>} />
             <Route path="reports" element={<ErrorBoundary><Reports /></ErrorBoundary>} />
-            <Route path="financial" element={<ErrorBoundary><Financial /></ErrorBoundary>} />
             <Route path="automation" element={<ErrorBoundary><AutomationRules /></ErrorBoundary>} />
-            <Route path="campaign-library" element={<ErrorBoundary><CampaignLibrary /></ErrorBoundary>} />
             <Route path="whatsapp" element={<ErrorBoundary><WhatsAppSettings /></ErrorBoundary>} />
             <Route path="clients" element={<ErrorBoundary><Clients /></ErrorBoundary>} />
-            <Route path="api-logs" element={<ErrorBoundary><ApiLogs /></ErrorBoundary>} />
-            <Route path="audiences" element={<ErrorBoundary><Audiences /></ErrorBoundary>} />
-            <Route path="knowledge-base" element={<ErrorBoundary><KnowledgeBase /></ErrorBoundary>} />
             <Route path="leads" element={<ErrorBoundary><Leads /></ErrorBoundary>} />
             <Route path="purchase-journey" element={<ErrorBoundary><PurchaseJourney /></ErrorBoundary>} />
             <Route path="tracking-links" element={<ErrorBoundary><TrackingLinks /></ErrorBoundary>} />

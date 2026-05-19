@@ -15,7 +15,6 @@ import {
   ChevronRight,
   X,
   Bot,
-  Library,
   CheckCheck,
   AlertTriangle,
   AlertCircle,
@@ -23,16 +22,11 @@ import {
   CheckCircle2,
   Stethoscope,
   FileText,
-  Wallet,
   Zap,
-  BookOpen,
   MessageSquare,
   Sun,
   Moon,
   Users,
-  UsersRound,
-  Activity,
-  GraduationCap,
   Target,
   Workflow,
   Link2,
@@ -141,29 +135,43 @@ export default function AppLayout() {
   const unreadCount = notifData?.unreadCount || 0;
   const notifications = notifData?.notifications || [];
 
-  const navigation = [
-    { name: 'Painel', href: '/dashboard', icon: BarChart3 },
-    { name: 'Campanhas', href: '/campaigns', icon: Megaphone },
-    { name: 'Plataformas', href: '/platforms', icon: Plug },
-    { name: 'Ad Library', href: '/ad-library', icon: Library },
-    { name: 'Agente IA', href: '/ai-agent', icon: Bot },
-    { name: 'Automação', href: '/automation', icon: Zap },
-    { name: 'Diagnosticos', href: '/diagnostics', icon: Stethoscope },
-    { name: 'Relatorios', href: '/reports', icon: FileText },
-    { name: 'Financeiro', href: '/financial', icon: Wallet },
-    { name: 'Leads', href: '/leads', icon: Target },
-    { name: 'Jornada de Compra', href: '/purchase-journey', icon: Workflow },
-    { name: 'Links Rastreaveis', href: '/tracking-links', icon: Link2 },
-    { name: 'Msg Rastreaveis', href: '/tracking-messages', icon: MessageSquareText },
-    { name: 'Eventos Conversao', href: '/conversion-events', icon: Zap },
-    { name: 'Pixel', href: '/pixel', icon: QrCode },
-    { name: 'Webhooks', href: '/webhooks', icon: Webhook },
-    { name: 'Biblioteca', href: '/campaign-library', icon: BookOpen },
-    { name: 'WhatsApp', href: '/whatsapp', icon: MessageSquare },
-    { name: 'Clientes', href: '/clients', icon: Users },
-    { name: 'Públicos', href: '/audiences', icon: UsersRound },
-    { name: 'Base de Conhecimento', href: '/knowledge-base', icon: GraduationCap },
-    { name: 'API Logs', href: '/api-logs', icon: Activity },
+  const navGroups = [
+    {
+      title: 'Geral',
+      items: [
+        { name: 'Painel', href: '/dashboard', icon: BarChart3 },
+        { name: 'Campanhas', href: '/campaigns', icon: Megaphone },
+        { name: 'Plataformas', href: '/platforms', icon: Plug },
+        { name: 'Relatórios', href: '/reports', icon: FileText },
+      ],
+    },
+    {
+      title: 'Inteligência',
+      items: [
+        { name: 'Agente IA', href: '/ai-agent', icon: Bot },
+        { name: 'Automação', href: '/automation', icon: Zap },
+        { name: 'Diagnósticos', href: '/diagnostics', icon: Stethoscope },
+      ],
+    },
+    {
+      title: 'Rastreamento',
+      items: [
+        { name: 'Jornada de Compra', href: '/purchase-journey', icon: Workflow },
+        { name: 'Links Rastreáveis', href: '/tracking-links', icon: Link2 },
+        { name: 'Msg Rastreáveis', href: '/tracking-messages', icon: MessageSquareText },
+        { name: 'Eventos de Conversão', href: '/conversion-events', icon: Zap },
+        { name: 'Pixel', href: '/pixel', icon: QrCode },
+        { name: 'Webhooks', href: '/webhooks', icon: Webhook },
+      ],
+    },
+    {
+      title: 'Vendas',
+      items: [
+        { name: 'WhatsApp', href: '/whatsapp', icon: MessageSquare },
+        { name: 'Leads', href: '/leads', icon: Target },
+        { name: 'Clientes', href: '/clients', icon: Users },
+      ],
+    },
   ];
 
   const isActive = (path: string) => location.pathname === path;
@@ -213,26 +221,38 @@ export default function AppLayout() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {navigation.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.href);
-            return (
-              <Link key={item.name} to={item.href}>
-                <Button
-                  variant={active ? 'secondary' : 'ghost'}
-                  className={cn(
-                    'w-full justify-start',
-                    !sidebarOpen && 'justify-center px-2',
-                    active && 'bg-primary/10 text-primary hover:bg-primary/20'
-                  )}
-                >
-                  <Icon className="h-5 w-5" />
-                  {sidebarOpen && <span className="ml-3">{item.name}</span>}
-                </Button>
-              </Link>
-            );
-          })}
+        <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
+          {navGroups.map((group, groupIdx) => (
+            <div key={group.title} className="space-y-1">
+              {sidebarOpen ? (
+                <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {group.title}
+                </p>
+              ) : (
+                groupIdx > 0 && <div className="mx-2 mb-2 border-t" />
+              )}
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const active = isActive(item.href);
+                return (
+                  <Link key={item.name} to={item.href}>
+                    <Button
+                      variant={active ? 'secondary' : 'ghost'}
+                      title={!sidebarOpen ? item.name : undefined}
+                      className={cn(
+                        'w-full justify-start',
+                        !sidebarOpen && 'justify-center px-2',
+                        active && 'bg-primary/10 text-primary hover:bg-primary/20'
+                      )}
+                    >
+                      <Icon className="h-5 w-5" />
+                      {sidebarOpen && <span className="ml-3">{item.name}</span>}
+                    </Button>
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         {/* Expand/Collapse Button (when collapsed) */}
@@ -328,29 +348,36 @@ export default function AppLayout() {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-3 space-y-1">
-            {navigation.map((item) => {
-              const Icon = item.icon;
-              const active = isActive(item.href);
-              return (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  <Button
-                    variant={active ? 'secondary' : 'ghost'}
-                    className={cn(
-                      'w-full justify-start',
-                      active && 'bg-primary/10 text-primary hover:bg-primary/20'
-                    )}
-                  >
-                    <Icon className="h-5 w-5" />
-                    <span className="ml-3">{item.name}</span>
-                  </Button>
-                </Link>
-              );
-            })}
+          <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
+            {navGroups.map((group) => (
+              <div key={group.title} className="space-y-1">
+                <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {group.title}
+                </p>
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const active = isActive(item.href);
+                  return (
+                    <Link
+                      key={item.name}
+                      to={item.href}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <Button
+                        variant={active ? 'secondary' : 'ghost'}
+                        className={cn(
+                          'w-full justify-start',
+                          active && 'bg-primary/10 text-primary hover:bg-primary/20'
+                        )}
+                      >
+                        <Icon className="h-5 w-5" />
+                        <span className="ml-3">{item.name}</span>
+                      </Button>
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
 
           {/* Dark Mode + User Section */}
@@ -406,22 +433,17 @@ export default function AppLayout() {
                 '/dashboard': 'Painel',
                 '/campaigns': 'Campanhas',
                 '/platforms': 'Plataformas',
-                '/ad-library': 'Ad Library',
                 '/ai-agent': 'Agente IA',
                 '/automation': 'Automação',
-                '/diagnostics': 'Diagnosticos',
-                '/reports': 'Relatorios',
-                '/financial': 'Financeiro',
-                '/campaign-library': 'Biblioteca de Campanhas',
+                '/diagnostics': 'Diagnósticos',
+                '/reports': 'Relatórios',
                 '/whatsapp': 'WhatsApp',
                 '/clients': 'Clientes',
-                '/audiences': 'Públicos Personalizados',
-                '/api-logs': 'API Logs',
                 '/leads': 'Leads',
                 '/purchase-journey': 'Jornada de Compra',
-                '/tracking-links': 'Links Rastreaveis',
-                '/tracking-messages': 'Mensagens Rastreaveis',
-                '/conversion-events': 'Eventos de Conversao',
+                '/tracking-links': 'Links Rastreáveis',
+                '/tracking-messages': 'Mensagens Rastreáveis',
+                '/conversion-events': 'Eventos de Conversão',
                 '/pixel': 'Pixel',
                 '/webhooks': 'Webhooks',
               } as Record<string, string>)[location.pathname] || 'Painel'}

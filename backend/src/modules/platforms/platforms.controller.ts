@@ -68,9 +68,34 @@ export class PlatformsController {
       const { loginId } = req.params;
       const result = await platformsService.resyncLogin(req.user.userId, loginId);
 
+      // After rediscovering accounts, sync campaigns + metrics for each one
+      // so a single click on "Sincronizar" actually updates the data.
+      const accounts = await prisma.platform.findMany({
+        where: { platformLoginId: loginId, isConnected: true },
+        select: { id: true, name: true },
+      });
+
+      let campaignsSynced = 0;
+      let metricsSynced = 0;
+      const failedAccounts: string[] = [];
+
+      for (const account of accounts) {
+        try {
+          const synced = await platformsService.syncPlatformCampaigns(account.id);
+          campaignsSynced += synced.synced;
+          metricsSynced += synced.metricsSynced;
+        } catch (err: any) {
+          logger.warn(`Resync: campaign sync failed for account ${account.name}: ${err.message}`);
+          failedAccounts.push(account.name);
+        }
+      }
+
+      // Clear campaigns cache so new data appears immediately
+      await cache.delPattern(`campaigns:${req.user.userId}:*`);
+
       res.status(200).json({
         success: true,
-        data: result,
+        data: { ...result, campaignsSynced, metricsSynced, failedAccounts },
       });
     } catch (error: any) {
       if (error instanceof AppError) {

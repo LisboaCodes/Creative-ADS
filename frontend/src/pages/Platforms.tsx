@@ -8,7 +8,6 @@ import {
   Linkedin,
   Twitter,
   RefreshCw,
-  CheckCircle2,
   Sparkles,
   ChevronDown,
   ChevronRight,
@@ -115,15 +114,6 @@ export default function Platforms() {
     retry: 2,
   });
 
-  // Also fetch all platforms for connected status
-  const { data: platforms } = useQuery({
-    queryKey: ['platforms'],
-    queryFn: async () => {
-      const response = await api.get('/api/platforms');
-      return response.data.data;
-    },
-  });
-
   // Resync login mutation
   const resyncMutation = useMutation({
     mutationFn: async (loginId: string) => {
@@ -131,9 +121,17 @@ export default function Platforms() {
       return response.data.data;
     },
     onSuccess: (data) => {
-      toast.success(`Sincronizado: ${data.adAccounts} contas (${data.newAccounts} novas)`);
+      const parts = [`${data.adAccounts} conta(s)`];
+      if (data.newAccounts > 0) parts.push(`${data.newAccounts} nova(s)`);
+      if (typeof data.campaignsSynced === 'number') parts.push(`${data.campaignsSynced} campanha(s)`);
+      toast.success(`Sincronizado: ${parts.join(' · ')}`);
+      if (data.failedAccounts?.length) {
+        toast.warning(`${data.failedAccounts.length} conta(s) falharam ao sincronizar`);
+      }
       queryClient.invalidateQueries({ queryKey: ['platformLogins'] });
       queryClient.invalidateQueries({ queryKey: ['platforms'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['overview-metrics'] });
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.error || 'Falha ao sincronizar');
@@ -303,7 +301,9 @@ export default function Platforms() {
               ) : (
                 <RefreshCw className="h-4 w-4" />
               )}
-              <span className="ml-1">Sync</span>
+              <span className="ml-1">
+                {resyncMutation.isPending ? 'Sincronizando...' : 'Sincronizar'}
+              </span>
             </Button>
             <Button
               variant="ghost"
@@ -428,7 +428,7 @@ export default function Platforms() {
 
             {login.platforms.length === 0 && (
               <p className="text-sm text-muted-foreground py-2 text-center">
-                Nenhuma conta de anuncio encontrada. Clique em "Sync" para redescobrir.
+                Nenhuma conta de anuncio encontrada. Clique em "Sincronizar" para redescobrir.
               </p>
             )}
           </div>
