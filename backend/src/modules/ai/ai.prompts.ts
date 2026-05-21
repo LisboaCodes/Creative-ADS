@@ -95,7 +95,12 @@ ACOES DISPONIVEIS (inclua <actions>[json]</actions> quando sugerir):
 - PAUSE_CAMPAIGN: {campaignId, parameters:{}, reason:"..."}
 - ACTIVATE_CAMPAIGN: {campaignId, parameters:{}, reason:"..."}
 - UPDATE_BUDGET: {campaignId, parameters:{dailyBudget:N}, reason:"..."}
-- CREATE_CAMPAIGN: {parameters:{name,objective,dailyBudget,targeting}, reason:"..."}
+- CREATE_CAMPAIGN: {parameters:{name, objective, dailyBudget?, lifetimeBudget?, startDate?, endDate?, targeting?, creative?}, reason:"..."}
+  - objective: um de OUTCOME_AWARENESS|OUTCOME_TRAFFIC|OUTCOME_ENGAGEMENT|OUTCOME_LEADS|OUTCOME_SALES
+  - dailyBudget OU lifetimeBudget em reais (numero). startDate/endDate em ISO "YYYY-MM-DD"
+  - targeting: {geoLocations:{countries:["BR"], cities?:[{key,name}]}, ageMin?, ageMax?, genders?:[1=masc,2=fem], interests?:[{id,name}]}
+  - creative (opcional, requer pageId real do usuario): {pageId, message, headline, description, linkUrl, callToAction}
+  - So inclua creative se souber o pageId; caso contrario crie sem criativo e oriente o usuario a adicionar depois.
 
 DADOS DO USUARIO (30d):
 Geral: R$${o?.spend?.toFixed(2)||'0'} gasto | ${o?.impressions||0} imp | ${o?.clicks||0} cli | ${o?.conversions||0} conv | R$${o?.revenue?.toFixed(2)||'0'} rec | CTR=${o?.ctr?.toFixed(2)||'0'}% | CPC=R$${o?.cpc?.toFixed(2)||'0'} | ROAS=${o?.roas?.toFixed(2)||'0'}x
@@ -164,6 +169,95 @@ Totais: R$${context.overview.spend.toFixed(2)} gasto | ${context.overview.clicks
 ${campaignsTable}
 
 Gere o briefing com formatacao rica markdown.`;
+}
+
+/**
+ * Build prompt to turn a free-text brief into a structured campaign draft
+ * for the "Criar com IA" wizard shortcut. Returns JSON only.
+ */
+export function buildCampaignDraftPrompt(context: {
+  brief: string;
+  platformType: string;
+  today: string;
+}): string {
+  return `Voce e um especialista em trafego pago. Transforme o briefing abaixo em um RASCUNHO de campanha estruturado para a plataforma ${context.platformType}.
+
+BRIEFING DO USUARIO:
+"${context.brief}"
+
+Data de hoje: ${context.today}
+
+REGRAS:
+- objective deve ser EXATAMENTE um de: OUTCOME_AWARENESS, OUTCOME_TRAFFIC, OUTCOME_ENGAGEMENT, OUTCOME_LEADS, OUTCOME_SALES
+- budgetType: "daily" ou "lifetime". Defina um valor realista em reais (numero, sem "R$").
+- Para vendas/leads prefira OUTCOME_SALES/OUTCOME_LEADS. Para divulgacao use OUTCOME_AWARENESS/OUTCOME_TRAFFIC.
+- countries: use codigos ISO-2 (ex: "BR"). Se nao houver indicacao, use ["BR"].
+- ageMin/ageMax entre 18 e 65. genders: [] = todos, [1] = masculino, [2] = feminino.
+- interestSuggestions: 3 a 6 NOMES de interesses (strings) relevantes ao publico (o usuario buscara e adicionara).
+- creative.callToAction: um de LEARN_MORE, SHOP_NOW, SIGN_UP, CONTACT_US, DOWNLOAD, GET_OFFER, SUBSCRIBE, SEND_WHATSAPP_MESSAGE.
+- Escreva copy persuasiva em PT-BR (message ate 200 chars, headline ate 40 chars, description ate 60 chars).
+- NAO invente pageId, imageHash, postId, datas especificas nem URLs (deixe linkUrl "" se nao informado).
+- Retorne APENAS o JSON puro, sem markdown, sem texto fora do JSON.
+
+Formato exato:
+{
+  "name": "Nome da campanha",
+  "objective": "OUTCOME_SALES",
+  "budgetType": "daily",
+  "dailyBudget": 50,
+  "lifetimeBudget": null,
+  "targeting": { "countries": ["BR"], "ageMin": 25, "ageMax": 45, "genders": [], "interestSuggestions": ["...", "..."] },
+  "creative": { "message": "...", "headline": "...", "description": "...", "callToAction": "SHOP_NOW", "linkUrl": "" },
+  "reasoning": "Por que estas escolhas (1-2 frases)"
+}
+
+Responda SOMENTE com o JSON.`;
+}
+
+/**
+ * Build prompt for proactive optimization suggestions across the account.
+ * Returns JSON only.
+ */
+export function buildProactiveSuggestionsPrompt(context: {
+  campaigns: Array<{
+    id: string; name: string; status: string; platformType: string;
+    dailyBudget: number | null;
+    spend: number; clicks: number; impressions: number;
+    conversions: number; revenue: number;
+    ctr: number; cpc: number; roas: number;
+  }>;
+  metricsOverview: {
+    spend: number; clicks: number; impressions: number;
+    conversions: number; revenue: number;
+    ctr: number; cpc: number; roas: number;
+  };
+}): string {
+  const campaignLines = context.campaigns
+    .map((c) => `- [${c.id}] ${c.name} (${c.platformType}, ${c.status}): gasto=R$${c.spend.toFixed(2)} cli=${c.clicks} imp=${c.impressions} conv=${c.conversions} rec=R$${c.revenue.toFixed(2)} ctr=${c.ctr.toFixed(2)}% cpc=R$${c.cpc.toFixed(2)} roas=${c.roas.toFixed(2)}x budget=${c.dailyBudget ? `R$${c.dailyBudget.toFixed(2)}` : '-'}`)
+    .join('\n');
+
+  const o = context.metricsOverview;
+
+  return `Voce e um agente de trafego pago proativo. Analise as campanhas reais abaixo e gere ate 5 sugestoes de otimizacao acionaveis, priorizadas por impacto.
+
+BENCHMARKS: CTR bom>1.5% ruim<0.5% | CPC bom<R$2 alto>R$5 | ROAS bom>3x ruim<1x
+
+METRICAS GERAIS (30d): gasto=R$${o.spend.toFixed(2)} cli=${o.clicks} conv=${o.conversions} rec=R$${o.revenue.toFixed(2)} ctr=${o.ctr.toFixed(2)}% cpc=R$${o.cpc.toFixed(2)} roas=${o.roas.toFixed(2)}x
+
+CAMPANHAS:
+${campaignLines || 'Nenhuma campanha com dados.'}
+
+REGRAS:
+- Cada sugestao deve citar dados concretos (numeros) e ser pratica.
+- severity: "high" (problema urgente, ex: ROAS<1 gastando muito), "medium" (oportunidade), "low" (ajuste fino).
+- prompt: uma pergunta/comando pronto que o usuario pode enviar ao agente para agir (ex: "Pause a campanha X que esta com ROAS 0.4").
+- Inclua campaignId quando a sugestao for sobre uma campanha especifica.
+- Retorne APENAS um JSON array puro, sem markdown.
+
+Formato de cada item:
+{ "title": "Titulo curto", "detail": "Explicacao com numeros", "severity": "high", "campaignId": "id ou null", "prompt": "Comando pronto para o agente" }
+
+Responda SOMENTE com o JSON array.`;
 }
 
 /**

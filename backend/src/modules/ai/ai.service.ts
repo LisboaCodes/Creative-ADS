@@ -4,7 +4,7 @@ import { env } from '../../config/env';
 import { IAIProvider } from './providers/base.provider';
 import { ClaudeProvider } from './providers/claude.provider';
 import { OpenAIProvider } from './providers/openai.provider';
-import { buildSystemPrompt, buildCampaignFocusContext, buildClientBriefingPrompt, buildAutomationSuggestPrompt } from './ai.prompts';
+import { buildSystemPrompt, buildCampaignFocusContext, buildClientBriefingPrompt, buildAutomationSuggestPrompt, buildCampaignDraftPrompt, buildProactiveSuggestionsPrompt } from './ai.prompts';
 import { campaignsService } from '../campaigns/campaigns.service';
 import { logger } from '../../utils/logger';
 import { NotFoundError, ServiceUnavailableError } from '../../utils/errors';
@@ -29,12 +29,19 @@ export class AIService {
   private getProvider(provider?: string): IAIProvider {
     const name = provider || env.AI_DEFAULT_PROVIDER;
     const p = this.providers.get(name);
-    if (!p) {
-      throw new ServiceUnavailableError(
-        `Provedor de IA "${name}" nao configurado. Verifique as variaveis de ambiente.`
-      );
+    if (p) return p;
+
+    // Fallback: requested provider isn't configured, use any available one
+    // (e.g. front-end asked CLAUDE but only the OpenAI key is set).
+    const fallback = this.providers.values().next().value as IAIProvider | undefined;
+    if (fallback) {
+      logger.warn(`Provedor de IA "${name}" nao configurado, usando fallback disponivel.`);
+      return fallback;
     }
-    return p;
+
+    throw new ServiceUnavailableError(
+      `Nenhum provedor de IA configurado. Defina OPENAI_API_KEY ou ANTHROPIC_API_KEY.`
+    );
   }
 
   async chat(userId: string, input: ChatMessageInput) {
@@ -314,7 +321,11 @@ export class AIService {
           name: params.name || 'Nova Campanha',
           objective: params.objective || 'OUTCOME_TRAFFIC',
           dailyBudget: params.dailyBudget,
+          lifetimeBudget: params.lifetimeBudget,
+          startDate: params.startDate,
+          endDate: params.endDate,
           targeting: params.targeting,
+          creative: params.creative,
         });
         break;
       }
@@ -556,6 +567,140 @@ export class AIService {
       campaignCount: campaigns.length,
       existingRulesCount: existingRules.length,
     };
+  }
+
+  /**
+   * Turn a free-text brief into a structured campaign draft for the wizard.
+   */
+  async generateCampaignDraft(userId: string, params: { platformId: string; brief: string }) {
+    const provider = this.getProvider();
+
+    const platform = await prisma.platform.findFirst({
+      where: { id: params.platformId, userId },
+    });
+    if (!platform) {
+      throw new NotFoundError('Plataforma nao encontrada');
+    }
+
+    const prompt = buildCampaignDraftPrompt({
+      brief: params.brief,
+      platformType: platform.type,
+      today: new Date().toISOString().split('T')[0],
+    });
+
+    const response = await provider.chat(
+      [{ role: 'user', content: prompt }],
+      'Voce e um especialista em trafego pago. Responda SOMENTE com JSON valido.'
+    );
+
+    let draft: any = {};
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) draft = JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      logger.error('Failed to parse campaign draft JSON:', e);
+      throw new ServiceUnavailableError('A IA retornou um formato invalido. Tente novamente.');
+    }
+
+    // Sanitize against allowed values
+    const validObjectives = ['OUTCOME_AWARENESS', 'OUTCOME_TRAFFIC', 'OUTCOME_ENGAGEMENT', 'OUTCOME_LEADS', 'OUTCOME_SALES'];
+    const validCtas = ['LEARN_MORE', 'SHOP_NOW', 'SIGN_UP', 'CONTACT_US', 'BOOK_TRAVEL', 'DOWNLOAD', 'GET_OFFER', 'SUBSCRIBE', 'SEND_WHATSAPP_MESSAGE'];
+    const t = draft.targeting || {};
+    const c = draft.creative || {};
+
+    const clampAge = (v: any, fallback: number) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.min(65, Math.max(18, Math.round(n)));
+    };
+
+    return {
+      name: String(draft.name || '').slice(0, 120),
+      objective: validObjectives.includes(draft.objective) ? draft.objective : 'OUTCOME_TRAFFIC',
+      budgetType: draft.budgetType === 'lifetime' ? 'lifetime' : 'daily',
+      dailyBudget: draft.dailyBudget != null && Number(draft.dailyBudget) > 0 ? Number(draft.dailyBudget) : undefined,
+      lifetimeBudget: draft.lifetimeBudget != null && Number(draft.lifetimeBudget) > 0 ? Number(draft.lifetimeBudget) : undefined,
+      targeting: {
+        countries: Array.isArray(t.countries) && t.countries.length > 0
+          ? t.countries.map((x: any) => String(x).toUpperCase().slice(0, 2))
+          : ['BR'],
+        ageMin: clampAge(t.ageMin, 18),
+        ageMax: clampAge(t.ageMax, 65),
+        genders: Array.isArray(t.genders) ? t.genders.filter((g: any) => g === 1 || g === 2) : [],
+        interestSuggestions: Array.isArray(t.interestSuggestions)
+          ? t.interestSuggestions.map((s: any) => String(s).slice(0, 60)).slice(0, 6)
+          : [],
+      },
+      creative: {
+        message: String(c.message || '').slice(0, 600),
+        headline: String(c.headline || '').slice(0, 100),
+        description: String(c.description || '').slice(0, 200),
+        callToAction: validCtas.includes(c.callToAction) ? c.callToAction : 'LEARN_MORE',
+        linkUrl: String(c.linkUrl || ''),
+      },
+      reasoning: String(draft.reasoning || '').slice(0, 500),
+    };
+  }
+
+  /**
+   * Proactive optimization suggestions across the account (JSON cards).
+   */
+  async getProactiveSuggestions(userId: string) {
+    const provider = this.getProvider();
+    const context = await this.getCachedContext(userId);
+
+    const campaigns = context.activeCampaignsWithMetrics.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      status: c.status,
+      platformType: c.platformType,
+      dailyBudget: c.dailyBudget,
+      spend: c.totalSpend,
+      clicks: c.totalClicks,
+      impressions: c.totalImpressions,
+      conversions: c.totalConversions,
+      revenue: c.totalRevenue,
+      ctr: c.avgCtr,
+      cpc: c.avgCpc,
+      roas: c.avgRoas,
+    }));
+
+    if (campaigns.length === 0) {
+      return { suggestions: [], campaignCount: 0 };
+    }
+
+    const prompt = buildProactiveSuggestionsPrompt({
+      campaigns,
+      metricsOverview: context.metricsOverview,
+    });
+
+    const response = await provider.chat(
+      [{ role: 'user', content: prompt }],
+      'Voce e um agente de trafego pago proativo. Retorne APENAS um JSON array puro.'
+    );
+
+    let suggestions: any[] = [];
+    try {
+      const jsonMatch = response.content.match(/\[[\s\S]*\]/);
+      if (jsonMatch) suggestions = JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      logger.error('Failed to parse proactive suggestions JSON:', e);
+      suggestions = [];
+    }
+
+    const validSeverity = ['high', 'medium', 'low'];
+    suggestions = (Array.isArray(suggestions) ? suggestions : [])
+      .filter((s: any) => s && s.title && s.prompt)
+      .map((s: any) => ({
+        title: String(s.title).slice(0, 120),
+        detail: String(s.detail || '').slice(0, 400),
+        severity: validSeverity.includes(s.severity) ? s.severity : 'medium',
+        campaignId: s.campaignId ? String(s.campaignId) : null,
+        prompt: String(s.prompt).slice(0, 500),
+      }))
+      .slice(0, 5);
+
+    return { suggestions, campaignCount: campaigns.length };
   }
 
   private async getCachedContext(userId: string) {

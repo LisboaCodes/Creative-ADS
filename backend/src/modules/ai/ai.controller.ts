@@ -4,7 +4,7 @@ import { AuthRequest } from '../auth/auth.middleware';
 import { aiService } from './ai.service';
 import { logger } from '../../utils/logger';
 import { AppError } from '../../utils/errors';
-import { chatMessageSchema, bulkApproveSchema } from './ai.schemas';
+import { chatMessageSchema, bulkApproveSchema, generateCampaignSchema } from './ai.schemas';
 
 const briefingSchema = z.object({
   platformId: z.string(),
@@ -158,6 +158,36 @@ export class AIController {
         return res.status(error.statusCode).json({ success: false, error: error.message });
       }
       logger.error('Suggest automations error:', error);
+      return res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  async generateCampaign(req: AuthRequest, res: Response) {
+    try {
+      const parsed = generateCampaignSchema.parse(req.body);
+      const result = await aiService.generateCampaignDraft(req.user!.userId, parsed);
+      return res.status(200).json({ success: true, data: result });
+    } catch (error: any) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({ success: false, error: error.errors });
+      }
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Generate campaign error:', error);
+      return res.status(500).json({ success: false, error: error.message || 'Internal error' });
+    }
+  }
+
+  async proactiveSuggestions(req: AuthRequest, res: Response) {
+    try {
+      const result = await aiService.getProactiveSuggestions(req.user!.userId);
+      return res.status(200).json({ success: true, data: result });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      logger.error('Proactive suggestions error:', error);
       return res.status(500).json({ success: false, error: error.message || 'Internal error' });
     }
   }

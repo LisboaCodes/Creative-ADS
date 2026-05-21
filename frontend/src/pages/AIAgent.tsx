@@ -14,8 +14,23 @@ import {
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { cn } from '../lib/utils';
 import ChatMessage from '../components/ai/ChatMessage';
 import ActionCard from '../components/ai/ActionCard';
+
+interface ProactiveSuggestion {
+  title: string;
+  detail: string;
+  severity: 'high' | 'medium' | 'low';
+  campaignId: string | null;
+  prompt: string;
+}
+
+const severityDot: Record<string, string> = {
+  high: 'bg-red-500',
+  medium: 'bg-yellow-500',
+  low: 'bg-blue-500',
+};
 
 interface Message {
   id: string;
@@ -47,7 +62,7 @@ interface AIAction {
 export default function AIAgent() {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const [message, setMessage] = useState('');
-  const [provider, setProvider] = useState('CLAUDE');
+  const [provider, setProvider] = useState('OPENAI');
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -69,6 +84,18 @@ export default function AIAgent() {
       return response.data.data;
     },
     enabled: !!selectedConversation,
+  });
+
+  // Proactive suggestions (only on the empty/start screen)
+  const { data: proactive, isLoading: proactiveLoading } = useQuery({
+    queryKey: ['ai-proactive'],
+    queryFn: async () => {
+      const response = await api.get('/api/ai/proactive');
+      return response.data.data as { suggestions: ProactiveSuggestion[]; campaignCount: number };
+    },
+    enabled: !selectedConversation,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
   });
 
   // Send message mutation
@@ -297,6 +324,50 @@ export default function AIAgent() {
                   </Button>
                 ))}
               </div>
+
+              {/* Proactive suggestions based on real campaign data */}
+              {(proactiveLoading || (proactive?.suggestions?.length ?? 0) > 0) && (
+                <div className="mt-8 w-full max-w-lg space-y-2 text-left">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Sugestões proativas
+                    </p>
+                  </div>
+                  {proactiveLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Analisando suas campanhas...
+                    </div>
+                  ) : (
+                    proactive!.suggestions.map((s, i) => (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          setMessage(s.prompt);
+                          sendMessage.mutate(s.prompt);
+                        }}
+                        className="w-full text-left rounded-lg border p-3 hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex items-start gap-2">
+                          <span
+                            className={cn(
+                              'mt-1.5 h-2 w-2 rounded-full flex-shrink-0',
+                              severityDot[s.severity] || 'bg-muted-foreground'
+                            )}
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium">{s.title}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                              {s.detail}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           )}
 

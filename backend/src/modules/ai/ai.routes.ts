@@ -16,6 +16,12 @@ router.post('/briefing', (req, res) => aiController.briefing(req, res));
 // Suggest automation rules
 router.post('/suggest-automations', (req, res) => aiController.suggestAutomations(req, res));
 
+// Generate a structured campaign draft from a free-text brief
+router.post('/generate-campaign', (req, res) => aiController.generateCampaign(req, res));
+
+// Proactive optimization suggestions
+router.get('/proactive', (req, res) => aiController.proactiveSuggestions(req, res));
+
 // Conversations
 router.get('/conversations', (req, res) => aiController.getConversations(req, res));
 router.get('/conversations/:id', (req, res) => aiController.getConversation(req, res));

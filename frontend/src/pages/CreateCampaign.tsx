@@ -22,6 +22,7 @@ import {
   MessageSquare,
   MapPin,
   Link2,
+  Sparkles,
 } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -118,6 +119,10 @@ export default function CreateCampaign() {
 
   // City search state
   const [citySearch, setCitySearch] = useState('');
+
+  // "Criar com IA" brief-to-draft state
+  const [aiBrief, setAiBrief] = useState('');
+  const [aiGenerating, setAiGenerating] = useState(false);
 
   // AI suggestions state
   const [aiLoading, setAiLoading] = useState(false);
@@ -313,6 +318,62 @@ export default function CreateCampaign() {
     }
   }, [formData]);
 
+  // Generate a full campaign draft from a free-text brief and prefill the wizard
+  const handleGenerateWithAI = useCallback(async () => {
+    if (!formData.platformId) {
+      toast.error('Selecione uma conta de anúncios primeiro');
+      return;
+    }
+    if (aiBrief.trim().length < 3) return;
+
+    setAiGenerating(true);
+    try {
+      const response = await api.post('/api/ai/generate-campaign', {
+        platformId: formData.platformId,
+        brief: aiBrief.trim(),
+      });
+      const d = response.data.data;
+
+      setFormData((prev) => ({
+        ...prev,
+        name: d.name || prev.name,
+        objective: d.objective || prev.objective,
+        budgetType: d.budgetType || prev.budgetType,
+        dailyBudget: d.dailyBudget ?? prev.dailyBudget,
+        lifetimeBudget: d.lifetimeBudget ?? prev.lifetimeBudget,
+        targeting: {
+          ...prev.targeting,
+          geoLocations: {
+            ...prev.targeting.geoLocations,
+            countries: d.targeting?.countries?.length ? d.targeting.countries : prev.targeting.geoLocations.countries,
+          },
+          ageMin: d.targeting?.ageMin ?? prev.targeting.ageMin,
+          ageMax: d.targeting?.ageMax ?? prev.targeting.ageMax,
+          genders: d.targeting?.genders ?? prev.targeting.genders,
+        },
+        creative: {
+          ...prev.creative,
+          message: d.creative?.message || prev.creative.message,
+          headline: d.creative?.headline || prev.creative.headline,
+          description: d.creative?.description || prev.creative.description,
+          callToAction: d.creative?.callToAction || prev.creative.callToAction,
+          linkUrl: d.creative?.linkUrl || prev.creative.linkUrl,
+        },
+      }));
+
+      // Interests need real FB IDs — surface as clickable search suggestions
+      if (d.targeting?.interestSuggestions?.length) {
+        setAiInterestSuggestions(d.targeting.interestSuggestions);
+      }
+      setIsDirty(true);
+      toast.success('Campanha preenchida pela IA! Revise os passos antes de publicar.');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Falha ao gerar campanha com IA');
+    } finally {
+      setAiGenerating(false);
+    }
+  }, [formData.platformId, aiBrief]);
+
   // Image upload handler
   const handleImageUpload = useCallback(async (file: File) => {
     if (!formData.platformId) {
@@ -397,6 +458,25 @@ export default function CreateCampaign() {
         return true;
       default:
         return false;
+    }
+  };
+
+  // Tells the user what's missing so a disabled "Próximo" never feels broken.
+  const missingHint = (): string | null => {
+    if (canProceed()) return null;
+    switch (step) {
+      case 0:
+        if (!formData.platformId) return 'Selecione uma conta de anúncios para continuar.';
+        if (!formData.name) return 'Dê um nome à campanha para continuar.';
+        return null;
+      case 1:
+        return 'Escolha um objetivo para continuar.';
+      case 2:
+        return 'Selecione ao menos um país no público.';
+      case 3:
+        return 'Defina um orçamento maior que zero para continuar.';
+      default:
+        return null;
     }
   };
 
@@ -515,6 +595,40 @@ export default function CreateCampaign() {
                   </p>
                 )}
               </div>
+              {/* Criar com IA — brief to full draft */}
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  <p className="text-sm font-medium">Criar com IA</p>
+                  <Badge variant="secondary" className="text-xs">beta</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Descreva o que você quer e a IA preenche objetivo, público, orçamento e copy. Você revisa antes de publicar.
+                </p>
+                <Textarea
+                  value={aiBrief}
+                  onChange={(e) => setAiBrief(e.target.value)}
+                  placeholder="Ex: Campanha de vendas para meu curso de inglês, R$70/dia, mulheres 25-45 em SP interessadas em educação"
+                  rows={2}
+                  disabled={!formData.platformId || aiGenerating}
+                />
+                <Button
+                  size="sm"
+                  onClick={handleGenerateWithAI}
+                  disabled={!formData.platformId || aiGenerating || aiBrief.trim().length < 3}
+                >
+                  {aiGenerating ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4 mr-2" />
+                  )}
+                  {aiGenerating ? 'Gerando...' : 'Gerar campanha'}
+                </Button>
+                {!formData.platformId && (
+                  <p className="text-xs text-muted-foreground">Selecione uma conta acima para habilitar.</p>
+                )}
+              </div>
+
               <div>
                 <Label>Nome da Campanha</Label>
                 <Input
@@ -1475,10 +1589,17 @@ export default function CreateCampaign() {
         </Button>
 
         {step < STEPS.length - 1 ? (
-          <Button onClick={() => setStep(step + 1)} disabled={!canProceed()}>
-            Próximo
-            <ArrowRight className="h-4 w-4 ml-2" />
-          </Button>
+          <div className="flex items-center gap-3">
+            {missingHint() && (
+              <p className="text-xs text-muted-foreground text-right max-w-[16rem]">
+                {missingHint()}
+              </p>
+            )}
+            <Button onClick={() => setStep(step + 1)} disabled={!canProceed()}>
+              Próximo
+              <ArrowRight className="h-4 w-4 ml-2" />
+            </Button>
+          </div>
         ) : (
           <div className="flex gap-2">
             <Button
