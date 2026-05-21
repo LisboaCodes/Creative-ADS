@@ -24,41 +24,43 @@ syncCampaignsQueue.process('sync-platform', async (job) => {
   }
 });
 
-// Sync all platforms (called by recurring job)
-syncCampaignsQueue.process('sync-all-platforms', async (job) => {
-  logger.info('Running sync for all connected platforms');
+// Sync all logins (called by the recurring job).
+// Runs a FULL sync per login: rediscovers BMs/accounts AND syncs campaigns +
+// metrics. This way new accounts/campaigns show up automatically, with no click.
+syncCampaignsQueue.process('sync-all-platforms', async () => {
+  logger.info('Auto-sync: running full sync for all Facebook logins');
 
-  // Only sync FACEBOOK platforms (Instagram uses the same API/ad accounts, syncing both creates duplicates)
-  // Also skip demo accounts
-  const platforms = await prisma.platform.findMany({
-    where: {
-      isConnected: true,
-      type: 'FACEBOOK',
-      NOT: {
-        externalId: { startsWith: 'act_fb_' },
-      },
-    },
+  const logins = await prisma.platformLogin.findMany({
+    where: { platformType: 'FACEBOOK' },
     select: { id: true, userId: true },
   });
 
-  logger.info(`Found ${platforms.length} connected Facebook platforms to sync`);
+  logger.info(`Auto-sync: found ${logins.length} Facebook login(s)`);
 
-  // Track per-user sync counts
-  const userSyncCounts = new Map<string, number>();
+  // Track per-user totals for a summary notification
+  const userTotals = new Map<string, { campaigns: number; failed: number }>();
 
-  // Add individual sync jobs
-  for (const platform of platforms) {
-    await syncCampaignsQueue.add('sync-platform', { platformId: platform.id });
-    userSyncCounts.set(platform.userId, (userSyncCounts.get(platform.userId) || 0) + 1);
+  for (const login of logins) {
+    try {
+      const result = await platformsService.syncLoginFull(login.userId, login.id);
+      const totals = userTotals.get(login.userId) || { campaigns: 0, failed: 0 };
+      totals.campaigns += result.campaignsSynced;
+      totals.failed += result.failedAccounts.length;
+      userTotals.set(login.userId, totals);
+    } catch (error: any) {
+      logger.error(`Auto-sync failed for login ${login.id}: ${error.message}`);
+    }
   }
 
-  // Notify users that sync started
-  for (const [userId, count] of userSyncCounts) {
+  for (const [userId, totals] of userTotals) {
     try {
       await notificationsService.createNotification(userId, {
-        title: 'Sync concluido',
-        message: `${count} plataforma(s) sincronizada(s) com sucesso.`,
-        type: 'SUCCESS',
+        title: 'Sincronização automática concluída',
+        message:
+          totals.failed > 0
+            ? `${totals.campaigns} campanha(s) atualizada(s). ${totals.failed} conta(s) falharam — verifique a conexão.`
+            : `${totals.campaigns} campanha(s) atualizada(s).`,
+        type: totals.failed > 0 ? 'WARNING' : 'SUCCESS',
       });
     } catch (error: any) {
       logger.error(`Failed to create sync notification for user ${userId}:`, error.message);
