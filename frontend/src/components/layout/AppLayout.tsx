@@ -13,6 +13,7 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   X,
   Bot,
   CheckCheck,
@@ -33,6 +34,7 @@ import {
   MessageSquareText,
   QrCode,
   Webhook,
+  type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -50,6 +52,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '../ui/popover';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '../ui/collapsible';
 import { Badge } from '../ui/badge';
 import { cn } from '../../lib/utils';
 
@@ -67,6 +74,68 @@ const notificationColors: Record<string, string> = {
   ERROR: 'text-red-500',
 };
 
+type NavLeaf = { name: string; href: string; icon: LucideIcon };
+type NavGroup = { name: string; icon: LucideIcon; items: NavLeaf[] };
+type NavEntry = NavLeaf | NavGroup;
+
+const isGroup = (entry: NavEntry): entry is NavGroup => 'items' in entry;
+
+const navItems: NavEntry[] = [
+  { name: 'Painel', href: '/dashboard', icon: BarChart3 },
+  { name: 'Campanhas', href: '/campaigns', icon: Megaphone },
+  { name: 'Plataformas', href: '/platforms', icon: Plug },
+  {
+    name: 'Vendas',
+    icon: MessageSquare,
+    items: [
+      { name: 'WhatsApp', href: '/whatsapp', icon: MessageSquare },
+      { name: 'Leads', href: '/leads', icon: Target },
+      { name: 'Clientes', href: '/clients', icon: Users },
+    ],
+  },
+  {
+    name: 'Rastreamento',
+    icon: Workflow,
+    items: [
+      { name: 'Jornada de Compra', href: '/purchase-journey', icon: Workflow },
+      { name: 'Links Rastreáveis', href: '/tracking-links', icon: Link2 },
+      { name: 'Msg Rastreáveis', href: '/tracking-messages', icon: MessageSquareText },
+      { name: 'Eventos de Conversão', href: '/conversion-events', icon: Zap },
+      { name: 'Pixel', href: '/pixel', icon: QrCode },
+      { name: 'Webhooks', href: '/webhooks', icon: Webhook },
+    ],
+  },
+  {
+    name: 'Inteligência',
+    icon: Bot,
+    items: [
+      { name: 'Agente IA', href: '/ai-agent', icon: Bot },
+      { name: 'Automação', href: '/automation', icon: Zap },
+      { name: 'Diagnósticos', href: '/diagnostics', icon: Stethoscope },
+    ],
+  },
+  { name: 'Relatórios', href: '/reports', icon: FileText },
+];
+
+const pageTitles: Record<string, string> = {
+  '/dashboard': 'Painel',
+  '/campaigns': 'Campanhas',
+  '/platforms': 'Plataformas',
+  '/ai-agent': 'Agente IA',
+  '/automation': 'Automação',
+  '/diagnostics': 'Diagnósticos',
+  '/reports': 'Relatórios',
+  '/whatsapp': 'WhatsApp',
+  '/clients': 'Clientes',
+  '/leads': 'Leads',
+  '/purchase-journey': 'Jornada de Compra',
+  '/tracking-links': 'Links Rastreáveis',
+  '/tracking-messages': 'Mensagens Rastreáveis',
+  '/conversion-events': 'Eventos de Conversão',
+  '/pixel': 'Pixel',
+  '/webhooks': 'Webhooks',
+};
+
 function formatTimeAgo(date: string) {
   const diff = Date.now() - new Date(date).getTime();
   const minutes = Math.floor(diff / 60000);
@@ -76,6 +145,115 @@ function formatTimeAgo(date: string) {
   if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
   return `${days}d`;
+}
+
+function NavLeafButton({
+  item,
+  collapsed,
+  nested,
+  onNavigate,
+}: {
+  item: NavLeaf;
+  collapsed?: boolean;
+  nested?: boolean;
+  onNavigate?: () => void;
+}) {
+  const location = useLocation();
+  const active = location.pathname === item.href;
+  const Icon = item.icon;
+  return (
+    <Link to={item.href} onClick={onNavigate}>
+      <Button
+        variant="ghost"
+        title={collapsed ? item.name : undefined}
+        className={cn(
+          'w-full justify-start font-normal',
+          collapsed && 'justify-center px-2',
+          nested && 'h-9 text-sm',
+          active && 'bg-primary/10 text-primary hover:bg-primary/15 font-medium'
+        )}
+      >
+        <Icon className={cn('h-5 w-5 shrink-0', nested && 'h-4 w-4')} />
+        {!collapsed && <span className={cn('ml-3', nested && 'ml-2.5')}>{item.name}</span>}
+      </Button>
+    </Link>
+  );
+}
+
+function NavGroupItem({
+  group,
+  onNavigate,
+}: {
+  group: NavGroup;
+  onNavigate?: () => void;
+}) {
+  const location = useLocation();
+  const hasActiveChild = group.items.some((i) => location.pathname === i.href);
+  const [open, setOpen] = useState(hasActiveChild);
+
+  useEffect(() => {
+    if (hasActiveChild) setOpen(true);
+  }, [hasActiveChild]);
+
+  const Icon = group.icon;
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <Button
+          variant="ghost"
+          className={cn(
+            'w-full justify-start font-normal',
+            hasActiveChild && !open && 'text-primary'
+          )}
+        >
+          <Icon className="h-5 w-5 shrink-0" />
+          <span className="ml-3 flex-1 text-left">{group.name}</span>
+          <ChevronDown
+            className={cn('h-4 w-4 shrink-0 transition-transform', open && 'rotate-180')}
+          />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-1 space-y-1 border-l border-border/60 pl-2 ml-4">
+        {group.items.map((item) => (
+          <NavLeafButton key={item.href} item={item} nested onNavigate={onNavigate} />
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function SidebarNav({
+  collapsed,
+  onNavigate,
+}: {
+  collapsed?: boolean;
+  onNavigate?: () => void;
+}) {
+  // Collapsed (icon-only) sidebar: flatten everything into icons.
+  if (collapsed) {
+    const leaves = navItems.flatMap((entry) =>
+      isGroup(entry) ? entry.items : [entry]
+    );
+    return (
+      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+        {leaves.map((item) => (
+          <NavLeafButton key={item.href} item={item} collapsed />
+        ))}
+      </nav>
+    );
+  }
+
+  return (
+    <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+      {navItems.map((entry) =>
+        isGroup(entry) ? (
+          <NavGroupItem key={entry.name} group={entry} onNavigate={onNavigate} />
+        ) : (
+          <NavLeafButton key={entry.href} item={entry} onNavigate={onNavigate} />
+        )
+      )}
+    </nav>
+  );
 }
 
 export default function AppLayout() {
@@ -108,14 +286,13 @@ export default function AppLayout() {
     navigate('/login');
   };
 
-  // Fetch notifications
   const { data: notifData } = useQuery({
     queryKey: ['notifications'],
     queryFn: async () => {
       const res = await api.get('/api/notifications');
       return res.data.data;
     },
-    refetchInterval: 30000, // Refresh every 30s
+    refetchInterval: 30000,
   });
 
   const markAllRead = useMutation({
@@ -135,48 +312,6 @@ export default function AppLayout() {
   const unreadCount = notifData?.unreadCount || 0;
   const notifications = notifData?.notifications || [];
 
-  const navGroups = [
-    {
-      title: 'Geral',
-      items: [
-        { name: 'Painel', href: '/dashboard', icon: BarChart3 },
-        { name: 'Campanhas', href: '/campaigns', icon: Megaphone },
-        { name: 'Plataformas', href: '/platforms', icon: Plug },
-        { name: 'Relatórios', href: '/reports', icon: FileText },
-      ],
-    },
-    {
-      title: 'Inteligência',
-      items: [
-        { name: 'Agente IA', href: '/ai-agent', icon: Bot },
-        { name: 'Automação', href: '/automation', icon: Zap },
-        { name: 'Diagnósticos', href: '/diagnostics', icon: Stethoscope },
-      ],
-    },
-    {
-      title: 'Rastreamento',
-      items: [
-        { name: 'Jornada de Compra', href: '/purchase-journey', icon: Workflow },
-        { name: 'Links Rastreáveis', href: '/tracking-links', icon: Link2 },
-        { name: 'Msg Rastreáveis', href: '/tracking-messages', icon: MessageSquareText },
-        { name: 'Eventos de Conversão', href: '/conversion-events', icon: Zap },
-        { name: 'Pixel', href: '/pixel', icon: QrCode },
-        { name: 'Webhooks', href: '/webhooks', icon: Webhook },
-      ],
-    },
-    {
-      title: 'Vendas',
-      items: [
-        { name: 'WhatsApp', href: '/whatsapp', icon: MessageSquare },
-        { name: 'Leads', href: '/leads', icon: Target },
-        { name: 'Clientes', href: '/clients', icon: Users },
-      ],
-    },
-  ];
-
-  const isActive = (path: string) => location.pathname === path;
-
-  // Get user initials for avatar
   const getUserInitials = () => {
     if (!user?.name) return 'U';
     return user.name
@@ -187,27 +322,67 @@ export default function AppLayout() {
       .slice(0, 2);
   };
 
+  const SidebarBrand = ({ collapsed }: { collapsed?: boolean }) => (
+    <div className="flex items-center gap-2">
+      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
+        <BarChart3 className="h-5 w-5 text-primary-foreground" />
+      </div>
+      {!collapsed && <h1 className="text-xl font-bold tracking-tight">HackrAds</h1>}
+    </div>
+  );
+
+  const UserCard = () => (
+    <div className="flex items-center gap-3 rounded-lg p-2 hover:bg-accent">
+      <Avatar className="h-9 w-9">
+        <AvatarImage src={user?.avatar} />
+        <AvatarFallback className="bg-primary text-primary-foreground">
+          {getUserInitials()}
+        </AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">{user?.name}</p>
+        <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+      </div>
+    </div>
+  );
+
+  const DarkModeButton = ({ collapsed }: { collapsed?: boolean }) =>
+    collapsed ? (
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setDarkMode(!darkMode)}
+        title={darkMode ? 'Modo Claro' : 'Modo Escuro'}
+      >
+        {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      </Button>
+    ) : (
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-full justify-start text-muted-foreground"
+        onClick={() => setDarkMode(!darkMode)}
+      >
+        {darkMode ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
+        {darkMode ? 'Modo Claro' : 'Modo Escuro'}
+      </Button>
+    );
+
   return (
     <div className="min-h-screen bg-background">
       {/* Desktop Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 hidden lg:flex flex-col bg-card border-r transition-all duration-300',
+          'fixed inset-y-0 left-0 z-50 hidden flex-col border-r bg-card transition-all duration-300 lg:flex',
           sidebarOpen ? 'w-64' : 'w-16'
         )}
       >
-        {/* Logo */}
-        <div className="flex items-center justify-between h-16 px-4 border-b">
+        <div className="flex h-16 items-center justify-between border-b px-4">
           {sidebarOpen ? (
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-                <BarChart3 className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <h1 className="text-xl font-bold">HackrAds</h1>
-            </div>
+            <SidebarBrand />
           ) : (
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center mx-auto">
-              <BarChart3 className="h-5 w-5 text-primary-foreground" />
+            <div className="mx-auto">
+              <SidebarBrand collapsed />
             </div>
           )}
           <Button
@@ -220,44 +395,10 @@ export default function AppLayout() {
           </Button>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
-          {navGroups.map((group, groupIdx) => (
-            <div key={group.title} className="space-y-1">
-              {sidebarOpen ? (
-                <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {group.title}
-                </p>
-              ) : (
-                groupIdx > 0 && <div className="mx-2 mb-2 border-t" />
-              )}
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.href);
-                return (
-                  <Link key={item.name} to={item.href}>
-                    <Button
-                      variant={active ? 'secondary' : 'ghost'}
-                      title={!sidebarOpen ? item.name : undefined}
-                      className={cn(
-                        'w-full justify-start',
-                        !sidebarOpen && 'justify-center px-2',
-                        active && 'bg-primary/10 text-primary hover:bg-primary/20'
-                      )}
-                    >
-                      <Icon className="h-5 w-5" />
-                      {sidebarOpen && <span className="ml-3">{item.name}</span>}
-                    </Button>
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
-        </nav>
+        <SidebarNav collapsed={!sidebarOpen} />
 
-        {/* Expand/Collapse Button (when collapsed) */}
         {!sidebarOpen && (
-          <div className="p-3 border-t">
+          <div className="border-t p-3">
             <Button
               variant="ghost"
               size="icon"
@@ -269,46 +410,19 @@ export default function AppLayout() {
           </div>
         )}
 
-        {/* Dark Mode Toggle + User Section */}
         <div className="border-t">
           {sidebarOpen ? (
             <div className="px-3 pt-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start text-muted-foreground"
-                onClick={() => setDarkMode(!darkMode)}
-              >
-                {darkMode ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
-                {darkMode ? 'Modo Claro' : 'Modo Escuro'}
-              </Button>
+              <DarkModeButton />
             </div>
           ) : (
-            <div className="p-2 flex justify-center">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setDarkMode(!darkMode)}
-                title={darkMode ? 'Modo Claro' : 'Modo Escuro'}
-              >
-                {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              </Button>
+            <div className="flex justify-center p-2">
+              <DarkModeButton collapsed />
             </div>
           )}
           {sidebarOpen && (
             <div className="px-3 pb-3 pt-1">
-              <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent">
-                <Avatar className="h-9 w-9">
-                  <AvatarImage src={user?.avatar} />
-                  <AvatarFallback className="bg-primary text-primary-foreground">
-                    {getUserInitials()}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{user?.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-                </div>
-              </div>
+              <UserCard />
             </div>
           )}
         </div>
@@ -325,84 +439,23 @@ export default function AppLayout() {
       {/* Mobile Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 bg-card border-r transform transition-transform duration-300 lg:hidden',
+          'fixed inset-y-0 left-0 z-50 w-64 transform border-r bg-card transition-transform duration-300 lg:hidden',
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="flex flex-col h-full">
-          {/* Logo */}
-          <div className="flex items-center justify-between h-16 px-4 border-b">
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-                <BarChart3 className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <h1 className="text-xl font-bold">HackrAds</h1>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setMobileMenuOpen(false)}
-            >
+        <div className="flex h-full flex-col">
+          <div className="flex h-16 items-center justify-between border-b px-4">
+            <SidebarBrand />
+            <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(false)}>
               <X className="h-5 w-5" />
             </Button>
           </div>
 
-          {/* Navigation */}
-          <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
-            {navGroups.map((group) => (
-              <div key={group.title} className="space-y-1">
-                <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {group.title}
-                </p>
-                {group.items.map((item) => {
-                  const Icon = item.icon;
-                  const active = isActive(item.href);
-                  return (
-                    <Link
-                      key={item.name}
-                      to={item.href}
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      <Button
-                        variant={active ? 'secondary' : 'ghost'}
-                        className={cn(
-                          'w-full justify-start',
-                          active && 'bg-primary/10 text-primary hover:bg-primary/20'
-                        )}
-                      >
-                        <Icon className="h-5 w-5" />
-                        <span className="ml-3">{item.name}</span>
-                      </Button>
-                    </Link>
-                  );
-                })}
-              </div>
-            ))}
-          </nav>
+          <SidebarNav onNavigate={() => setMobileMenuOpen(false)} />
 
-          {/* Dark Mode + User Section */}
-          <div className="p-3 border-t space-y-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start text-muted-foreground"
-              onClick={() => setDarkMode(!darkMode)}
-            >
-              {darkMode ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
-              {darkMode ? 'Modo Claro' : 'Modo Escuro'}
-            </Button>
-            <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent">
-              <Avatar className="h-9 w-9">
-                <AvatarImage src={user?.avatar} />
-                <AvatarFallback className="bg-primary text-primary-foreground">
-                  {getUserInitials()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{user?.name}</p>
-                <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-              </div>
-            </div>
+          <div className="space-y-2 border-t p-3">
+            <DarkModeButton />
+            <UserCard />
           </div>
         </div>
       </aside>
@@ -415,8 +468,7 @@ export default function AppLayout() {
         )}
       >
         {/* Header */}
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-card px-4 lg:px-6">
-          {/* Mobile Menu Button */}
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-card/80 px-4 backdrop-blur lg:px-6">
           <Button
             variant="ghost"
             size="icon"
@@ -426,33 +478,13 @@ export default function AppLayout() {
             <Menu className="h-5 w-5" />
           </Button>
 
-          {/* Breadcrumb / Title */}
           <div className="flex-1">
-            <h2 className="text-lg font-semibold capitalize">
-              {({
-                '/dashboard': 'Painel',
-                '/campaigns': 'Campanhas',
-                '/platforms': 'Plataformas',
-                '/ai-agent': 'Agente IA',
-                '/automation': 'Automação',
-                '/diagnostics': 'Diagnósticos',
-                '/reports': 'Relatórios',
-                '/whatsapp': 'WhatsApp',
-                '/clients': 'Clientes',
-                '/leads': 'Leads',
-                '/purchase-journey': 'Jornada de Compra',
-                '/tracking-links': 'Links Rastreáveis',
-                '/tracking-messages': 'Mensagens Rastreáveis',
-                '/conversion-events': 'Eventos de Conversão',
-                '/pixel': 'Pixel',
-                '/webhooks': 'Webhooks',
-              } as Record<string, string>)[location.pathname] || 'Painel'}
+            <h2 className="text-lg font-semibold">
+              {pageTitles[location.pathname] || 'Painel'}
             </h2>
           </div>
 
-          {/* Header Actions */}
           <div className="flex items-center gap-2">
-            {/* Dark Mode Toggle */}
             <Button
               variant="ghost"
               size="icon"
@@ -462,7 +494,6 @@ export default function AppLayout() {
               {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </Button>
 
-            {/* Notifications Bell */}
             <Popover open={notifOpen} onOpenChange={setNotifOpen}>
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative">
@@ -470,7 +501,7 @@ export default function AppLayout() {
                   {unreadCount > 0 && (
                     <Badge
                       variant="destructive"
-                      className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs"
+                      className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center p-0 text-xs"
                     >
                       {unreadCount > 99 ? '99+' : unreadCount}
                     </Badge>
@@ -478,16 +509,16 @@ export default function AppLayout() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-80 p-0">
-                <div className="flex items-center justify-between px-4 py-3 border-b">
-                  <h3 className="font-semibold text-sm">Notificações</h3>
+                <div className="flex items-center justify-between border-b px-4 py-3">
+                  <h3 className="text-sm font-semibold">Notificações</h3>
                   {unreadCount > 0 && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-auto py-1 px-2 text-xs"
+                      className="h-auto px-2 py-1 text-xs"
                       onClick={() => markAllRead.mutate()}
                     >
-                      <CheckCheck className="h-3 w-3 mr-1" />
+                      <CheckCheck className="mr-1 h-3 w-3" />
                       Marcar todas como lidas
                     </Button>
                   )}
@@ -505,7 +536,7 @@ export default function AppLayout() {
                         <div
                           key={notif.id}
                           className={cn(
-                            'flex items-start gap-3 px-4 py-3 border-b last:border-0 cursor-pointer hover:bg-muted/50 transition-colors',
+                            'flex cursor-pointer items-start gap-3 border-b px-4 py-3 transition-colors last:border-0 hover:bg-muted/50',
                             !notif.isRead && 'bg-primary/5'
                           )}
                           onClick={() => {
@@ -514,24 +545,28 @@ export default function AppLayout() {
                             }
                             if (notif.metadata?.campaignId) {
                               setNotifOpen(false);
-                              navigate(`/diagnostics?campaignId=${notif.metadata.campaignId}&alert=${encodeURIComponent(notif.title)}`);
+                              navigate(
+                                `/diagnostics?campaignId=${notif.metadata.campaignId}&alert=${encodeURIComponent(notif.title)}`
+                              );
                             }
                           }}
                         >
-                          <IconComponent className={cn('h-4 w-4 mt-0.5 flex-shrink-0', colorClass)} />
-                          <div className="flex-1 min-w-0">
+                          <IconComponent
+                            className={cn('mt-0.5 h-4 w-4 flex-shrink-0', colorClass)}
+                          />
+                          <div className="min-w-0 flex-1">
                             <p className={cn('text-sm', !notif.isRead && 'font-medium')}>
                               {notif.title}
                             </p>
-                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                            <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                               {notif.message}
                             </p>
-                            <p className="text-xs text-muted-foreground mt-1">
+                            <p className="mt-1 text-xs text-muted-foreground">
                               {formatTimeAgo(notif.createdAt)}
                             </p>
                           </div>
                           {!notif.isRead && (
-                            <div className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-1.5" />
+                            <div className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-primary" />
                           )}
                         </div>
                       );
@@ -541,7 +576,6 @@ export default function AppLayout() {
               </PopoverContent>
             </Popover>
 
-            {/* User Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="gap-2">
@@ -551,7 +585,7 @@ export default function AppLayout() {
                       {getUserInitials()}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="hidden md:inline-block text-sm">{user?.name}</span>
+                  <span className="hidden text-sm md:inline-block">{user?.name}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
